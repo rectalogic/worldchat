@@ -1,0 +1,10 @@
+[package]
+name = "worldchat"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = "0.18.1"
+iroh = "0.96.1"
+iroh-gossip = "0.96.0"
+pkarr = { version = "5.0.3", default-features = false, features = ["relays"] }
