@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+async-channel = "2.5.0"
 bevy = "0.18.1"
 futures-timer = "3.0.3"
 iroh = "0.96.1"

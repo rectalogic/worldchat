@@ -8513,6 +8513,7 @@ dependencies = [
 name = "worldchat"
 version = "0.1.0"
 dependencies = [
+ "async-channel",
  "bevy",
  "futures-timer",
  "iroh",
