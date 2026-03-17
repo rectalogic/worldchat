@@ -6,12 +6,12 @@ use iroh::{Endpoint, RelayMode, SecretKey, protocol::Router};
 use iroh_gossip::{Gossip, net::GOSSIP_ALPN};
 
 pub fn plugin(app: &mut App) {
-    app.add_observer(local_user_added)
-        .add_systems(Update, poll_local_user_loading);
+    app.add_observer(user_added)
+        .add_systems(Update, poll_user_loading);
 }
 
 #[derive(Component)]
-pub struct ChatLocalUser(UserState);
+pub struct User(UserState);
 
 enum UserState {
     Loading {
@@ -25,7 +25,7 @@ enum UserState {
     },
 }
 
-impl ChatLocalUser {
+impl User {
     pub fn new(secret_key: SecretKey) -> Self {
         Self(UserState::Loading {
             secret_key,
@@ -34,7 +34,7 @@ impl ChatLocalUser {
     }
 }
 
-async fn load_local_user(secret_key: SecretKey) -> Result<UserState, BevyError> {
+async fn load_user(secret_key: SecretKey) -> Result<UserState, BevyError> {
     let endpoint = Endpoint::builder()
         .secret_key(secret_key)
         .relay_mode(RelayMode::Default)
@@ -53,27 +53,27 @@ async fn load_local_user(secret_key: SecretKey) -> Result<UserState, BevyError> 
     })
 }
 
-fn local_user_added(chat_local_user: On<Add, ChatLocalUser>, mut query: Query<&mut ChatLocalUser>) {
-    if let Ok(mut chat_user) = query.get_mut(chat_local_user.entity)
+fn user_added(user: On<Add, User>, mut query: Query<&mut User>) {
+    if let Ok(mut user) = query.get_mut(user.entity)
         && let UserState::Loading {
             ref secret_key,
             ref mut task,
-        } = chat_user.0
+        } = user.0
     {
         let secret_key = secret_key.clone();
-        *task = Some(IoTaskPool::get().spawn(async move { load_local_user(secret_key).await }));
+        *task = Some(IoTaskPool::get().spawn(async move { load_user(secret_key).await }));
     }
 }
 
-fn poll_local_user_loading(mut chat_local_user: Single<&mut ChatLocalUser>) {
+fn poll_user_loading(mut user: Single<&mut User>) {
     if let UserState::Loading {
         task: Some(ref mut task),
         ..
-    } = chat_local_user.0
+    } = user.0
         && let Some(result) = future::block_on(future::poll_once(task))
     {
         match result {
-            Ok(user_state) => chat_local_user.0 = user_state,
+            Ok(user_state) => user.0 = user_state,
             Err(e) => error!("Failed to initialize chat user: {e:?}"),
         }
     }

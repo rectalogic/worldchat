@@ -17,14 +17,14 @@ pub fn plugin(app: &mut App) {
 }
 
 #[derive(Component)]
-pub struct ChatRoom {
+pub struct Room {
     name: String,
     topic_id: TopicId,
     well_known_peer_cnames: Vec<pkarr::PublicKey>,
     membership_task: Option<Task<()>>,
 }
 
-impl ChatRoom {
+impl Room {
     pub fn new(
         name: String,
         topic_id: TopicId,
