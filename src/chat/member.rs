@@ -19,10 +19,10 @@ pub fn plugin(app: &mut App) {
 }
 
 #[derive(Component)]
-pub struct JoinRequest;
+pub struct RoomMembershipRequest;
 
 #[derive(Component)]
-pub struct Joined {
+pub struct RoomMember {
     // rx: async_channel::Receiver<String>,
     task: Task<()>,
 }
@@ -30,7 +30,7 @@ pub struct Joined {
 #[allow(clippy::type_complexity)]
 fn join_room(
     mut commands: Commands,
-    query: Query<(Entity, &Room), (With<JoinRequest>, Without<Joined>)>,
+    query: Query<(Entity, &Room), (With<RoomMembershipRequest>, Without<RoomMember>)>,
     user: Single<&LoadedUser>,
 ) {
     for (room_entity, room) in query {
@@ -38,7 +38,7 @@ fn join_room(
         let bootstrap_ids = room.bootstrap_ids().to_vec();
         let secret_key = user.endpoint().secret_key().clone();
         let gossip = user.gossip().clone();
-        commands.entity(room_entity).insert(Joined {
+        commands.entity(room_entity).insert(RoomMember {
             task: IoTaskPool::get().spawn(async move {
                 if let Err(e) = join_room_task(topic_id, bootstrap_ids, secret_key, gossip).await {
                     error!("Failed to join chat room: {e:?}");
@@ -75,6 +75,7 @@ async fn join_room_task(
     Ok(())
 }
 
+// Periodically publish a pkarr::PublicKey CNAME to our EndpointId
 async fn publish_endpoint_id(
     client: Client,
     cname: pkarr::PublicKey,
@@ -98,6 +99,7 @@ async fn publish_endpoint_id(
     }
 }
 
+// Resolve pkarr::PublicKey CNAMES to their target EndpointIds
 async fn resolve_bootstrap_endpoint_ids(
     client: &Client,
     bootstrap_ids: &[pkarr::PublicKey],
