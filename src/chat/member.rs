@@ -2,7 +2,10 @@ use std::{str::FromStr, time::Duration};
 
 use bevy::{
     prelude::*,
-    tasks::{IoTaskPool, Task},
+    tasks::{
+        IoTaskPool, Task,
+        futures_lite::{self, StreamExt, stream},
+    },
 };
 use iroh::{EndpointId, SecretKey};
 use iroh_gossip::{Gossip, TopicId};
@@ -23,7 +26,8 @@ pub struct RoomMembershipRequest;
 
 #[derive(Component)]
 pub struct RoomMember {
-    // rx: async_channel::Receiver<String>,
+    tx: async_channel::Sender<String>,
+    rx: async_channel::Receiver<iroh_gossip::api::Event>,
     task: Task<()>,
 }
 
@@ -38,9 +42,22 @@ fn join_room(
         let bootstrap_ids = room.bootstrap_ids().to_vec();
         let secret_key = user.endpoint().secret_key().clone();
         let gossip = user.gossip().clone();
+        let (bevy_tx, bevy_rx) = async_channel::unbounded();
+        let (gossip_tx, gossip_rx) = async_channel::unbounded();
         commands.entity(room_entity).insert(RoomMember {
+            tx: bevy_tx,
+            rx: gossip_rx,
             task: IoTaskPool::get().spawn(async move {
-                if let Err(e) = join_room_task(topic_id, bootstrap_ids, secret_key, gossip).await {
+                if let Err(e) = join_room_task(
+                    topic_id,
+                    bootstrap_ids,
+                    secret_key,
+                    gossip,
+                    bevy_rx,
+                    gossip_tx,
+                )
+                .await
+                {
                     error!("Failed to join chat room: {e:?}");
                 }
             }),
@@ -48,19 +65,27 @@ fn join_room(
     }
 }
 
+enum StreamItem {
+    BevyMessage(String),
+    GossipEvent(Result<iroh_gossip::api::Event, iroh_gossip::api::ApiError>),
+}
+
 async fn join_room_task(
     topic_id: TopicId,
     bootstrap_ids: Vec<pkarr::PublicKey>,
     secret_key: SecretKey,
     gossip: Gossip,
+    bevy_rx: async_channel::Receiver<String>,
+    gossip_tx: async_channel::Sender<iroh_gossip::api::Event>,
 ) -> Result<(), BevyError> {
     let client = Client::builder().build()?;
-    let gossip_topic = gossip
+    let (gossip_sender, gossip_receiver) = gossip
         .subscribe_and_join(
             topic_id,
             resolve_bootstrap_endpoint_ids(&client, &bootstrap_ids).await,
         )
-        .await?;
+        .await?
+        .split();
 
     let endpoint_cname = bootstrap_ids.choose(&mut rand::rng()).unwrap().clone();
     let _endpoint_publisher_task = IoTaskPool::get().spawn(async move {
@@ -69,8 +94,31 @@ async fn join_room_task(
         }
     });
 
-    //XXX need 2 async_channels, for msg from bevy and msg from iroh, use race() or future::select() to wait on them
-    // from iroh is a Stream - async_channel::Receiver implements Stream, so we can use select on 2 streams
+    let events = stream::race(
+        gossip_receiver.map(StreamItem::GossipEvent),
+        bevy_rx.map(StreamItem::BevyMessage),
+    );
+    futures_lite::pin!(events);
+
+    while let Some(e) = events.next().await {
+        match e {
+            StreamItem::BevyMessage(message) => {
+                if let Err(e) = gossip_sender.broadcast(message.into()).await {
+                    error!("Failed to send message: {e:?}")
+                }
+            }
+            StreamItem::GossipEvent(result) => match result {
+                Ok(event) => {
+                    if let Err(e) = gossip_tx.send(event).await {
+                        error!("Failed to send Gossip event to Bevy: {e:?}");
+                    }
+                }
+                Err(e) => {
+                    error!("Received Gossip API error: {e:?}");
+                }
+            },
+        }
+    }
 
     Ok(())
 }
