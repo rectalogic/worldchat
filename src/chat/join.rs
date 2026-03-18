@@ -27,15 +27,20 @@ pub struct ChatRoomEvent {
     pub event: iroh_gossip::api::Event,
 }
 
+#[derive(Debug)]
+pub enum ChatMessage {
+    Message(String),
+}
+
 #[derive(Component)]
 pub struct RoomConnection {
-    tx: async_channel::Sender<String>,
+    tx: async_channel::Sender<ChatMessage>,
     rx: async_channel::Receiver<iroh_gossip::api::Event>,
     task: Task<()>,
 }
 
 impl RoomConnection {
-    pub fn send(&self, message: String) -> Result<(), BevyError> {
+    pub fn send(&self, message: ChatMessage) -> Result<(), BevyError> {
         self.tx.send_blocking(message)?;
         Ok(())
     }
@@ -59,7 +64,7 @@ fn join_room(
             tx: bevy_tx,
             rx: gossip_rx,
             task: Task::spawn(&tokio, async move {
-                if let Err(e) = join_room_task(
+                if let Err(e) = room_event_loop(
                     topic_id,
                     bootstrap_keypairs,
                     secret_key,
@@ -77,16 +82,16 @@ fn join_room(
 }
 
 enum StreamItem {
-    BevyMessage(String),
+    ChatMessage(ChatMessage),
     GossipEvent(Result<iroh_gossip::api::Event, iroh_gossip::api::ApiError>),
 }
 
-async fn join_room_task(
+async fn room_event_loop(
     topic_id: TopicId,
     bootstrap_keypairs: Vec<pkarr::Keypair>,
     secret_key: SecretKey,
     gossip: Gossip,
-    bevy_rx: async_channel::Receiver<String>,
+    bevy_rx: async_channel::Receiver<ChatMessage>,
     gossip_tx: async_channel::Sender<iroh_gossip::api::Event>,
 ) -> Result<(), BevyError> {
     let client = Client::builder().build()?;
@@ -107,17 +112,19 @@ async fn join_room_task(
 
     let events = stream::race(
         gossip_receiver.map(StreamItem::GossipEvent),
-        bevy_rx.map(StreamItem::BevyMessage),
+        bevy_rx.map(StreamItem::ChatMessage),
     );
     futures_lite::pin!(events);
 
     while let Some(e) = events.next().await {
         match e {
-            StreamItem::BevyMessage(message) => {
-                if let Err(e) = gossip_sender.broadcast(message.into()).await {
-                    error!("Failed to send message: {e:?}")
+            StreamItem::ChatMessage(message) => match message {
+                ChatMessage::Message(message) => {
+                    if let Err(e) = gossip_sender.broadcast(message.into()).await {
+                        error!("Failed to send message: {e:?}")
+                    }
                 }
-            }
+            },
             StreamItem::GossipEvent(result) => match result {
                 Ok(event) => {
                     if let Err(e) = gossip_tx.send(event).await {
