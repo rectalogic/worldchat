@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
     tasks::futures_lite::{self, stream},
 };
-use iroh::{EndpointId, SecretKey};
+use iroh::{EndpointId, SecretKey, endpoint_info::EndpointIdExt};
 use iroh_gossip::{Gossip, TopicId};
 use pkarr::{
     Client,
@@ -91,7 +91,7 @@ async fn join_room_task(
 ) -> Result<(), BevyError> {
     let client = Client::builder().build()?;
     let (gossip_sender, gossip_receiver) = gossip
-        .subscribe_and_join(
+        .subscribe(
             topic_id,
             resolve_bootstrap_endpoint_ids(&client, &bootstrap_ids).await,
         )
@@ -146,8 +146,8 @@ async fn publish_endpoint_id(
     let keypair = pkarr::Keypair::from_secret_key(&secret_key.to_bytes());
     let signed_packet = pkarr::SignedPacket::builder()
         .cname(
-            pkarr::dns::Name::new(&cname.to_string())?,
-            pkarr::dns::Name::new(&secret_key.public().to_string())?,
+            pkarr::dns::Name::new(&cname.to_z32())?,
+            pkarr::dns::Name::new(&secret_key.public().to_z32())?,
             ttl,
         )
         .build(&keypair)?;
