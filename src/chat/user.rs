@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use iroh::{Endpoint, RelayMode, SecretKey, protocol::Router};
+use iroh::{Endpoint, SecretKey, endpoint::presets, protocol::Router};
 use iroh_gossip::{Gossip, net::GOSSIP_ALPN};
 
 use crate::tokio::{Task, TokioRuntime};
@@ -10,7 +10,8 @@ pub struct UserPlugin {
 
 impl Plugin for UserPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, poll_user_loading);
+        app.add_systems(Update, poll_user_loading)
+            .add_systems(Last, shutdown_endpoint);
         let secret_key = self.secret_key.clone();
         app.world_mut().spawn(UserLoader {
             task: Task::new(tokio::task::spawn(
@@ -39,6 +40,16 @@ impl User {
 
     pub fn gossip(&self) -> &Gossip {
         &self.gossip
+    }
+}
+
+fn shutdown_endpoint(
+    user: Single<&User>,
+    tokio: Res<TokioRuntime>,
+    exit_reader: MessageReader<AppExit>,
+) {
+    if !exit_reader.is_empty() {
+        tokio.block_on(user.endpoint().close());
     }
 }
 
