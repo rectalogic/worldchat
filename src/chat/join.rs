@@ -2,10 +2,7 @@ use std::{str::FromStr, time::Duration};
 
 use bevy::{
     prelude::*,
-    tasks::{
-        IoTaskPool, Task,
-        futures_lite::{self, StreamExt, stream},
-    },
+    tasks::futures_lite::{self, stream},
 };
 use iroh::{EndpointId, SecretKey};
 use iroh_gossip::{Gossip, TopicId};
@@ -14,6 +11,9 @@ use pkarr::{
     dns::rdata::{CNAME, RData},
 };
 use rand::seq::IndexedRandom;
+use tokio_stream::StreamExt;
+
+use crate::tokio::{Task, TokioRuntime};
 
 use super::{room::ChatRoom, user::User};
 
@@ -21,14 +21,11 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Update, (join_room, handle_gossip_event));
 }
 
-#[derive(EntityEvent)]
+#[derive(EntityEvent, Debug)]
 pub struct ChatRoomEvent {
     entity: Entity,
     pub event: iroh_gossip::api::Event,
 }
-
-#[derive(Component)]
-pub struct JoinRoomRequest;
 
 #[derive(Component)]
 pub struct RoomConnection {
@@ -47,8 +44,9 @@ impl RoomConnection {
 #[allow(clippy::type_complexity)]
 fn join_room(
     mut commands: Commands,
-    query: Query<(Entity, &ChatRoom), (With<JoinRoomRequest>, Without<RoomConnection>)>,
+    query: Query<(Entity, &ChatRoom), Without<RoomConnection>>,
     user: Single<&User>,
+    tokio: Res<TokioRuntime>,
 ) {
     for (room_entity, room) in query {
         let topic_id = room.topic_id();
@@ -60,7 +58,7 @@ fn join_room(
         commands.entity(room_entity).insert(RoomConnection {
             tx: bevy_tx,
             rx: gossip_rx,
-            task: IoTaskPool::get().spawn(async move {
+            task: Task::spawn(&tokio, async move {
                 if let Err(e) = join_room_task(
                     topic_id,
                     bootstrap_ids,
@@ -101,11 +99,11 @@ async fn join_room_task(
         .split();
 
     let endpoint_cname = bootstrap_ids.choose(&mut rand::rng()).unwrap().clone();
-    let _endpoint_publisher_task = IoTaskPool::get().spawn(async move {
+    let _endpoint_publisher_task = Task::new(tokio::task::spawn(async move {
         if let Err(e) = publish_endpoint_id(client, endpoint_cname, secret_key).await {
             error!("Endpoint CNAME publisher failed: {e:?}")
         }
-    });
+    }));
 
     let events = stream::race(
         gossip_receiver.map(StreamItem::GossipEvent),

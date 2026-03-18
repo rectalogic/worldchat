@@ -8521,6 +8521,7 @@ dependencies = [
  "pkarr",
  "rand",
  "tokio",
+ "tokio-stream",
 ]
 
 [[package]]

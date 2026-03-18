@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 use iroh::SecretKey;
 
+use crate::tokio::TokioRuntime;
+
 pub mod join;
 pub mod room;
 mod user;
@@ -16,6 +18,7 @@ impl Plugin for ChatPlugin {
                 secret_key: self.secret_key.clone(),
             },
             join::plugin,
-        ));
+        ))
+        .insert_resource(TokioRuntime::new());
     }
 }

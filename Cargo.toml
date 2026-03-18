@@ -2,15 +2,18 @@
 name = "worldchat"
 version = "0.1.0"
 edition = "2024"
+default-run = "worldchat"
 
 [dependencies]
 async-channel = "2.5.0"
 bevy = "0.18.1"
 futures-timer = "3.0.3"
-iroh = "0.96.1"
-iroh-gossip = "0.96.0"
+iroh = { version = "0.96", default-features = false }
+iroh-gossip = { version = "0.96", default-features = false, features = ["net"] }
 pkarr = { version = "5.0.3", default-features = false, features = ["relays"] }
 rand = "0.9.2"
+tokio = { version = "1", default-features = false, features = ["sync"] }
+tokio-stream = "0.1.18"
 
 [dev-dependencies]
-tokio = { version = "1.50.0", features = ["full"] }
+tokio = { version = "1", features = ["full"] }

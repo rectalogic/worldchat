@@ -1,9 +1,8 @@
-use bevy::{
-    prelude::*,
-    tasks::{IoTaskPool, Task, futures_lite::future},
-};
+use bevy::prelude::*;
 use iroh::{Endpoint, RelayMode, SecretKey, protocol::Router};
 use iroh_gossip::{Gossip, net::GOSSIP_ALPN};
+
+use crate::tokio::{Task, TokioRuntime};
 
 pub struct UserPlugin {
     pub secret_key: SecretKey,
@@ -14,7 +13,9 @@ impl Plugin for UserPlugin {
         app.add_systems(Update, poll_user_loading);
         let secret_key = self.secret_key.clone();
         app.world_mut().spawn(UserLoader {
-            task: IoTaskPool::get().spawn(async move { load_user(secret_key).await }),
+            task: Task::new(tokio::task::spawn(
+                async move { load_user(secret_key).await },
+            )),
         });
     }
 }
@@ -60,9 +61,13 @@ async fn load_user(secret_key: SecretKey) -> Result<User, BevyError> {
     })
 }
 
-fn poll_user_loading(mut commands: Commands, mut user: Single<(Entity, &mut UserLoader)>) {
+fn poll_user_loading(
+    mut commands: Commands,
+    mut user: Single<(Entity, &mut UserLoader)>,
+    tokio: Res<TokioRuntime>,
+) {
     let (entity, ref mut user) = *user;
-    if let Some(result) = future::block_on(future::poll_once(&mut user.task)) {
+    if let Some(result) = user.task.result(&tokio) {
         match result {
             Ok(loaded_user) => {
                 commands
