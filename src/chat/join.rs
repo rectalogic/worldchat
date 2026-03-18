@@ -15,27 +15,40 @@ use pkarr::{
 };
 use rand::seq::IndexedRandom;
 
-use super::{room::Room, user::LoadedUser};
+use super::{room::ChatRoom, user::User};
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(Update, join_room);
+    app.add_systems(Update, (join_room, handle_gossip_event));
+}
+
+#[derive(EntityEvent)]
+pub struct ChatRoomEvent {
+    entity: Entity,
+    pub event: iroh_gossip::api::Event,
 }
 
 #[derive(Component)]
-pub struct RoomMembershipRequest;
+pub struct JoinRoomRequest;
 
 #[derive(Component)]
-pub struct RoomMember {
+pub struct RoomConnection {
     tx: async_channel::Sender<String>,
     rx: async_channel::Receiver<iroh_gossip::api::Event>,
     task: Task<()>,
 }
 
+impl RoomConnection {
+    pub fn send(&self, message: String) -> Result<(), BevyError> {
+        self.tx.send_blocking(message)?;
+        Ok(())
+    }
+}
+
 #[allow(clippy::type_complexity)]
 fn join_room(
     mut commands: Commands,
-    query: Query<(Entity, &Room), (With<RoomMembershipRequest>, Without<RoomMember>)>,
-    user: Single<&LoadedUser>,
+    query: Query<(Entity, &ChatRoom), (With<JoinRoomRequest>, Without<RoomConnection>)>,
+    user: Single<&User>,
 ) {
     for (room_entity, room) in query {
         let topic_id = room.topic_id();
@@ -44,7 +57,7 @@ fn join_room(
         let gossip = user.gossip().clone();
         let (bevy_tx, bevy_rx) = async_channel::unbounded();
         let (gossip_tx, gossip_rx) = async_channel::unbounded();
-        commands.entity(room_entity).insert(RoomMember {
+        commands.entity(room_entity).insert(RoomConnection {
             tx: bevy_tx,
             rx: gossip_rx,
             task: IoTaskPool::get().spawn(async move {
@@ -168,4 +181,15 @@ async fn resolve_bootstrap_endpoint_ids(
         }
     }
     bootstrap_endpoint_ids
+}
+
+fn handle_gossip_event(mut commands: Commands, room_connections: Query<(Entity, &RoomConnection)>) {
+    for (room_entity, room_connection) in room_connections {
+        while let Ok(event) = room_connection.rx.try_recv() {
+            commands.trigger(ChatRoomEvent {
+                entity: room_entity,
+                event,
+            });
+        }
+    }
 }

@@ -5,34 +5,33 @@ use bevy::{
 use iroh::{Endpoint, RelayMode, SecretKey, protocol::Router};
 use iroh_gossip::{Gossip, net::GOSSIP_ALPN};
 
-pub fn plugin(app: &mut App) {
-    app.add_observer(user_added)
-        .add_systems(Update, poll_user_loading);
+pub struct UserPlugin {
+    pub secret_key: SecretKey,
+}
+
+impl Plugin for UserPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Update, poll_user_loading);
+        let secret_key = self.secret_key.clone();
+        app.world_mut().spawn(UserLoader {
+            task: IoTaskPool::get().spawn(async move { load_user(secret_key).await }),
+        });
+    }
+}
+
+#[derive(Component)]
+pub struct UserLoader {
+    task: Task<Result<User, BevyError>>,
 }
 
 #[derive(Component)]
 pub struct User {
-    secret_key: SecretKey,
-    task: Option<Task<Result<LoadedUser, BevyError>>>,
-}
-
-#[derive(Component)]
-pub struct LoadedUser {
     endpoint: Endpoint,
     router: Router,
     gossip: Gossip,
 }
 
 impl User {
-    pub fn new(secret_key: SecretKey) -> Self {
-        Self {
-            secret_key,
-            task: None,
-        }
-    }
-}
-
-impl LoadedUser {
     pub fn endpoint(&self) -> &Endpoint {
         &self.endpoint
     }
@@ -42,7 +41,7 @@ impl LoadedUser {
     }
 }
 
-async fn load_user(secret_key: SecretKey) -> Result<LoadedUser, BevyError> {
+async fn load_user(secret_key: SecretKey) -> Result<User, BevyError> {
     let endpoint = Endpoint::builder()
         .secret_key(secret_key)
         .relay_mode(RelayMode::Default)
@@ -54,29 +53,22 @@ async fn load_user(secret_key: SecretKey) -> Result<LoadedUser, BevyError> {
     let router = Router::builder(endpoint.clone())
         .accept(GOSSIP_ALPN, gossip.clone())
         .spawn();
-    Ok(LoadedUser {
+    Ok(User {
         endpoint,
         router,
         gossip,
     })
 }
 
-fn user_added(user: On<Add, User>, mut query: Query<&mut User, Without<LoadedUser>>) {
-    if let Ok(mut user) = query.get_mut(user.entity) {
-        let secret_key = user.secret_key.clone();
-        user.task = Some(IoTaskPool::get().spawn(async move { load_user(secret_key).await }));
-    }
-}
-
-fn poll_user_loading(mut commands: Commands, mut user: Single<(Entity, &mut User)>) {
+fn poll_user_loading(mut commands: Commands, mut user: Single<(Entity, &mut UserLoader)>) {
     let (entity, ref mut user) = *user;
-    if let Some(ref mut task) = user.task
-        && let Some(result) = future::block_on(future::poll_once(task))
-    {
+    if let Some(result) = future::block_on(future::poll_once(&mut user.task)) {
         match result {
             Ok(loaded_user) => {
-                user.task = None;
-                commands.entity(entity).insert(loaded_user);
+                commands
+                    .entity(entity)
+                    .insert(loaded_user)
+                    .remove::<UserLoader>();
             }
             Err(e) => error!("Failed to initialize chat user: {e:?}"),
         }

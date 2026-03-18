@@ -1,9 +1,21 @@
 use bevy::prelude::*;
+use iroh::SecretKey;
 
-mod member;
-mod room;
+pub mod join;
+pub mod room;
 mod user;
 
-pub fn plugin(app: &mut App) {
-    app.add_plugins((user::plugin, room::plugin, member::plugin));
+pub struct ChatPlugin {
+    pub secret_key: SecretKey,
+}
+
+impl Plugin for ChatPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins((
+            user::UserPlugin {
+                secret_key: self.secret_key.clone(),
+            },
+            join::plugin,
+        ));
+    }
 }
