@@ -5,15 +5,15 @@ use iroh_gossip::TopicId;
 pub struct ChatRoom {
     name: String,
     topic_id: TopicId,
-    bootstrap_ids: Vec<pkarr::PublicKey>,
+    bootstrap_keypairs: Vec<pkarr::Keypair>,
 }
 
 impl ChatRoom {
-    pub fn new(name: String, topic_id: TopicId, bootstrap_ids: Vec<pkarr::PublicKey>) -> Self {
+    pub fn new(name: String, topic_id: TopicId, bootstrap_keypairs: Vec<pkarr::Keypair>) -> Self {
         Self {
             topic_id,
             name,
-            bootstrap_ids,
+            bootstrap_keypairs,
         }
     }
 
@@ -21,7 +21,7 @@ impl ChatRoom {
         self.topic_id
     }
 
-    pub fn bootstrap_ids(&self) -> &[pkarr::PublicKey] {
-        &self.bootstrap_ids
+    pub fn bootstrap_keypairs(&self) -> &[pkarr::Keypair] {
+        &self.bootstrap_keypairs
     }
 }

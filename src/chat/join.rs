@@ -50,7 +50,7 @@ fn join_room(
 ) {
     for (room_entity, room) in query {
         let topic_id = room.topic_id();
-        let bootstrap_ids = room.bootstrap_ids().to_vec();
+        let bootstrap_keypairs = room.bootstrap_keypairs().to_vec();
         let secret_key = user.endpoint().secret_key().clone();
         let gossip = user.gossip().clone();
         let (bevy_tx, bevy_rx) = async_channel::unbounded();
@@ -61,7 +61,7 @@ fn join_room(
             task: Task::spawn(&tokio, async move {
                 if let Err(e) = join_room_task(
                     topic_id,
-                    bootstrap_ids,
+                    bootstrap_keypairs,
                     secret_key,
                     gossip,
                     bevy_rx,
@@ -83,7 +83,7 @@ enum StreamItem {
 
 async fn join_room_task(
     topic_id: TopicId,
-    bootstrap_ids: Vec<pkarr::PublicKey>,
+    bootstrap_keypairs: Vec<pkarr::Keypair>,
     secret_key: SecretKey,
     gossip: Gossip,
     bevy_rx: async_channel::Receiver<String>,
@@ -93,14 +93,14 @@ async fn join_room_task(
     let (gossip_sender, gossip_receiver) = gossip
         .subscribe(
             topic_id,
-            resolve_bootstrap_endpoint_ids(&client, &bootstrap_ids).await,
+            resolve_bootstrap_endpoint_ids(&client, &bootstrap_keypairs).await,
         )
         .await?
         .split();
 
-    let endpoint_cname = bootstrap_ids.choose(&mut rand::rng()).unwrap().clone();
+    let cname_keypair = bootstrap_keypairs.choose(&mut rand::rng()).unwrap().clone();
     let _endpoint_publisher_task = Task::new(tokio::task::spawn(async move {
-        if let Err(e) = publish_endpoint_id(client, endpoint_cname, secret_key).await {
+        if let Err(e) = publish_endpoint_id(client, cname_keypair, secret_key.public()).await {
             error!("Endpoint CNAME publisher failed: {e:?}")
         }
     }));
@@ -137,20 +137,19 @@ async fn join_room_task(
 // Periodically publish a pkarr::PublicKey CNAME to our EndpointId
 async fn publish_endpoint_id(
     client: Client,
-    cname: pkarr::PublicKey,
-    secret_key: SecretKey,
+    cname_keypair: pkarr::Keypair,
+    endpoint_id: EndpointId,
 ) -> Result<(), BevyError> {
     let ttl = 15u32;
     let delay = Duration::from_secs(ttl as u64);
 
-    let keypair = pkarr::Keypair::from_secret_key(&secret_key.to_bytes());
     let signed_packet = pkarr::SignedPacket::builder()
         .cname(
-            pkarr::dns::Name::new(&cname.to_z32())?,
-            pkarr::dns::Name::new(&secret_key.public().to_z32())?,
+            pkarr::dns::Name::new(&cname_keypair.public_key().to_z32())?,
+            pkarr::dns::Name::new(&endpoint_id.to_z32())?,
             ttl,
         )
-        .build(&keypair)?;
+        .build(&cname_keypair)?;
 
     loop {
         client.publish(&signed_packet, None).await?;
@@ -161,17 +160,17 @@ async fn publish_endpoint_id(
 // Resolve pkarr::PublicKey CNAMES to their target EndpointIds
 async fn resolve_bootstrap_endpoint_ids(
     client: &Client,
-    bootstrap_ids: &[pkarr::PublicKey],
+    bootstrap_keypairs: &[pkarr::Keypair],
 ) -> Vec<EndpointId> {
     let mut bootstrap_endpoint_ids = Vec::new();
-    for ep in bootstrap_ids {
-        if let Some(packet) = client.resolve_most_recent(ep).await {
+    for keypair in bootstrap_keypairs {
+        if let Some(packet) = client.resolve_most_recent(&keypair.public_key()).await {
             bootstrap_endpoint_ids.extend(packet.all_resource_records().filter_map(|record| {
                 if let RData::CNAME(CNAME(name)) = &record.rdata
                     && let Some(bytes) = name.as_bytes().next()
                     && let Ok(endpoint_str) = str::from_utf8(bytes)
                 {
-                    EndpointId::from_str(endpoint_str).ok()
+                    EndpointId::from_z32(endpoint_str).ok()
                 } else {
                     None
                 }
