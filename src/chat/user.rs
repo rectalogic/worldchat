@@ -43,9 +43,9 @@ impl User {
 }
 
 async fn load_user(secret_key: SecretKey) -> Result<User, BevyError> {
-    let endpoint = Endpoint::builder()
+    let endpoint = Endpoint::builder(presets::N0)
         .secret_key(secret_key)
-        .relay_mode(RelayMode::Default)
+        .alpns(vec![GOSSIP_ALPN.to_vec()])
         .bind()
         .await?;
     let gossip = Gossip::builder().spawn(endpoint.clone());
