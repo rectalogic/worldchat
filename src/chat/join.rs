@@ -162,7 +162,7 @@ async fn publish_endpoint_id(
         if let Err(e) = client.publish(&signed_packet, None).await {
             warn!("Failed to publish CNAME: {e:?}");
         }
-        futures_timer::Delay::new(delay).await;
+        tokio::time::sleep(delay).await;
     }
 }
 
