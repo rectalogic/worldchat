@@ -8562,6 +8562,7 @@ name = "worldchat"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "base32",
  "bevy",
  "iroh",
  "iroh-gossip",

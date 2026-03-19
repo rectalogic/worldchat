@@ -1,19 +1,46 @@
 use bevy::prelude::*;
+use iroh::{EndpointId, endpoint_info::EndpointIdExt};
 use iroh_gossip::TopicId;
+use pkarr::dns::rdata::{CNAME, RData};
+
+use crate::chat::to_z32;
+
+static ROOM_DNS_PREFIX: &str = "worldchat";
 
 #[derive(Component)]
 pub struct ChatRoom {
     name: String,
-    topic_id: TopicId,
-    bootstrap_keypairs: Vec<pkarr::Keypair>,
+    topic: RoomTopic,
 }
 
 impl ChatRoom {
-    pub fn new(name: String, topic_id: TopicId, bootstrap_keypairs: Vec<pkarr::Keypair>) -> Self {
+    pub fn new(name: String, keypair: pkarr::Keypair) -> Self {
         Self {
-            topic_id,
             name,
-            bootstrap_keypairs,
+            topic: RoomTopic::new(keypair),
+        }
+    }
+
+    pub fn topic(&self) -> &RoomTopic {
+        &self.topic
+    }
+}
+
+#[derive(Clone)]
+pub struct RoomTopic {
+    dns_publisher_keypair: pkarr::Keypair,
+    topic_id: TopicId,
+    bootstrap_dns_name: String,
+}
+
+impl RoomTopic {
+    fn new(keypair: pkarr::Keypair) -> Self {
+        let public_key = keypair.public_key();
+        let public_bytes = public_key.as_bytes();
+        Self {
+            topic_id: TopicId::from_bytes(public_bytes.clone()),
+            dns_publisher_keypair: keypair,
+            bootstrap_dns_name: format!("{}_{}", ROOM_DNS_PREFIX, to_z32(public_bytes)),
         }
     }
 
@@ -21,7 +48,43 @@ impl ChatRoom {
         self.topic_id
     }
 
-    pub fn bootstrap_keypairs(&self) -> &[pkarr::Keypair] {
-        &self.bootstrap_keypairs
+    pub fn dns_publisher_keypair(&self) -> &pkarr::Keypair {
+        &self.dns_publisher_keypair
+    }
+
+    pub fn bootstrap_dns_name(&self) -> &str {
+        &self.bootstrap_dns_name
+    }
+
+    // Resolve room CNAME to target EndpointIds
+    pub async fn resolve_bootstrap_endpoint_ids(
+        &self,
+        client: &pkarr::Client,
+        endpoint_id: EndpointId,
+    ) -> Vec<EndpointId> {
+        let mut bootstrap_endpoint_ids = Vec::new();
+
+        if let Some(packet) = client
+            .resolve_most_recent(&self.dns_publisher_keypair().public_key())
+            .await
+        {
+            bootstrap_endpoint_ids.extend(
+                packet
+                    .fresh_resource_records(self.bootstrap_dns_name())
+                    .filter_map(|record| {
+                        if let RData::CNAME(CNAME(name)) = &record.rdata
+                            && let Some(bytes) = name.as_bytes().next()
+                            && bytes != endpoint_id.as_bytes()
+                            && let Ok(endpoint_str) = str::from_utf8(bytes)
+                        {
+                            EndpointId::from_z32(endpoint_str).ok()
+                        } else {
+                            None
+                        }
+                    }),
+            );
+        }
+
+        bootstrap_endpoint_ids
     }
 }

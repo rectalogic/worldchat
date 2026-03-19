@@ -22,3 +22,7 @@ impl Plugin for ChatPlugin {
         .insert_resource(TokioRuntime::new());
     }
 }
+
+pub fn to_z32(bytes: &[u8]) -> String {
+    base32::encode(base32::Alphabet::Z, bytes)
+}

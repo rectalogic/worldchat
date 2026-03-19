@@ -5,15 +5,14 @@ use bevy::{
     tasks::futures_lite::{self, stream},
 };
 use iroh::{EndpointId, SecretKey, endpoint_info::EndpointIdExt};
-use iroh_gossip::{Gossip, TopicId};
-use pkarr::{
-    Client,
-    dns::rdata::{CNAME, RData},
-};
-use rand::seq::IndexedRandom;
+use iroh_gossip::Gossip;
+use pkarr::{Client, dns::rdata::RData};
 use tokio_stream::StreamExt;
 
-use crate::tokio::{Task, TokioRuntime};
+use crate::{
+    chat::room::RoomTopic,
+    tokio::{Task, TokioRuntime},
+};
 
 use super::{room::ChatRoom, user::User};
 
@@ -54,9 +53,8 @@ fn join_room(
     tokio: Res<TokioRuntime>,
 ) {
     for (room_entity, room) in query {
-        let topic_id = room.topic_id();
-        let bootstrap_keypairs = room.bootstrap_keypairs().to_vec();
         let secret_key = user.endpoint().secret_key().clone();
+        let topic = room.topic().clone();
         let gossip = user.gossip().clone();
         let (bevy_tx, bevy_rx) = async_channel::unbounded();
         let (gossip_tx, gossip_rx) = async_channel::unbounded();
@@ -64,15 +62,7 @@ fn join_room(
             tx: bevy_tx,
             rx: gossip_rx,
             task: Task::spawn(&tokio, async move {
-                if let Err(e) = room_event_loop(
-                    topic_id,
-                    bootstrap_keypairs,
-                    secret_key,
-                    gossip,
-                    bevy_rx,
-                    gossip_tx,
-                )
-                .await
+                if let Err(e) = room_event_loop(topic, secret_key, gossip, bevy_rx, gossip_tx).await
                 {
                     error!("Failed to join chat room: {e:?}");
                 }
@@ -87,8 +77,7 @@ enum StreamItem {
 }
 
 async fn room_event_loop(
-    topic_id: TopicId,
-    bootstrap_keypairs: Vec<pkarr::Keypair>,
+    topic: RoomTopic,
     secret_key: SecretKey,
     gossip: Gossip,
     bevy_rx: async_channel::Receiver<ChatMessage>,
@@ -97,15 +86,16 @@ async fn room_event_loop(
     let client = Client::builder().build()?;
     let (gossip_sender, gossip_receiver) = gossip
         .subscribe(
-            topic_id,
-            resolve_bootstrap_endpoint_ids(&client, &bootstrap_keypairs).await,
+            topic.topic_id(),
+            topic
+                .resolve_bootstrap_endpoint_ids(&client, secret_key.public())
+                .await,
         )
         .await?
         .split();
 
-    let cname_keypair = bootstrap_keypairs.choose(&mut rand::rng()).unwrap().clone();
     let _endpoint_publisher_task = Task::new(tokio::task::spawn(async move {
-        if let Err(e) = publish_endpoint_id(client, cname_keypair, secret_key.public()).await {
+        if let Err(e) = publish_endpoint_cname(client, topic, secret_key.public(), 15).await {
             error!("Endpoint CNAME publisher failed: {e:?}")
         }
     }));
@@ -141,52 +131,56 @@ async fn room_event_loop(
     Ok(())
 }
 
-// Periodically publish a pkarr::PublicKey CNAME to our EndpointId
-async fn publish_endpoint_id(
+// Periodically publish our EndpointId to the rooms DNS CNAME
+async fn publish_endpoint_cname(
     client: Client,
-    cname_keypair: pkarr::Keypair,
+    topic: RoomTopic,
     endpoint_id: EndpointId,
+    ttl: u32,
 ) -> Result<(), BevyError> {
-    let ttl = 15u32;
-    let delay = Duration::from_secs(ttl as u64);
-
-    let signed_packet = pkarr::SignedPacket::builder()
-        .cname(
-            pkarr::dns::Name::new(&cname_keypair.public_key().to_z32())?,
-            pkarr::dns::Name::new(&endpoint_id.to_z32())?,
-            ttl,
-        )
-        .build(&cname_keypair)?;
+    let delay = Duration::from_secs((ttl as f64 * 0.75) as u64);
+    let endpoint_z32 = endpoint_id.to_z32();
+    let endpoint_name = pkarr::dns::Name::new(&endpoint_z32)?;
 
     loop {
-        if let Err(e) = client.publish(&signed_packet, None).await {
+        let mut builder = pkarr::SignedPacket::builder();
+        let (builder, cas) = if let Some(most_recent) = client
+            .resolve_most_recent(&topic.dns_publisher_keypair().public_key())
+            .await
+        {
+            for record in most_recent.fresh_resource_records(topic.bootstrap_dns_name()) {
+                match record.rdata {
+                    RData::CNAME(ref cname) if cname.0 != endpoint_name => {
+                        match record.ttl.overflowing_sub(most_recent.elapsed()) {
+                            (_, true) => {}
+                            (ttl, false) => {
+                                let mut record = record.clone();
+                                record.ttl = ttl;
+                                builder = builder.record(record);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            (builder, Some(most_recent.timestamp()))
+        } else {
+            (builder, None)
+        };
+
+        let signed_packet = builder
+            .cname(
+                topic.bootstrap_dns_name().try_into()?,
+                endpoint_name.clone(),
+                ttl,
+            )
+            .sign(topic.dns_publisher_keypair())?;
+
+        if let Err(e) = client.publish(&signed_packet, cas).await {
             warn!("Failed to publish CNAME: {e:?}");
         }
         tokio::time::sleep(delay).await;
     }
-}
-
-// Resolve pkarr::PublicKey CNAMES to their target EndpointIds
-async fn resolve_bootstrap_endpoint_ids(
-    client: &Client,
-    bootstrap_keypairs: &[pkarr::Keypair],
-) -> Vec<EndpointId> {
-    let mut bootstrap_endpoint_ids = Vec::new();
-    for keypair in bootstrap_keypairs {
-        if let Some(packet) = client.resolve_most_recent(&keypair.public_key()).await {
-            bootstrap_endpoint_ids.extend(packet.all_resource_records().filter_map(|record| {
-                if let RData::CNAME(CNAME(name)) = &record.rdata
-                    && let Some(bytes) = name.as_bytes().next()
-                    && let Ok(endpoint_str) = str::from_utf8(bytes)
-                {
-                    EndpointId::from_z32(endpoint_str).ok()
-                } else {
-                    None
-                }
-            }));
-        }
-    }
-    bootstrap_endpoint_ids
 }
 
 fn handle_gossip_event(mut commands: Commands, room_connections: Query<(Entity, &RoomConnection)>) {

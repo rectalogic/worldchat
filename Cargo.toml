@@ -6,6 +6,7 @@ default-run = "worldchat"
 
 [dependencies]
 async-channel = "2.5.0"
+base32 = "0.5.1"
 bevy = "0.18.1"
 iroh = { version = "0.97", default-features = false }
 iroh-gossip = { version = "0.97", default-features = false, features = ["net"] }
