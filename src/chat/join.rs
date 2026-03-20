@@ -81,15 +81,14 @@ async fn room_event_loop(
     gossip_tx: async_channel::Sender<iroh_gossip::api::Event>,
 ) -> Result<(), BevyError> {
     let client = Client::builder().build()?;
-    let (gossip_sender, gossip_receiver) = gossip
+    let gossip_topic = gossip
         .subscribe(
             topic.topic_id(),
             topic
                 .resolve_bootstrap_endpoint_ids(&client, secret_key.public())
                 .await,
         )
-        .await?
-        .split();
+        .await?;
 
     let _endpoint_publisher_task = Task::new(tokio::task::spawn(async move {
         if let Err(e) = topic
@@ -100,6 +99,7 @@ async fn room_event_loop(
         }
     }));
 
+    let (gossip_sender, gossip_receiver) = gossip_topic.split();
     let events = stream::race(
         gossip_receiver.map(StreamItem::GossipEvent),
         bevy_rx.map(StreamItem::ChatMessage),
