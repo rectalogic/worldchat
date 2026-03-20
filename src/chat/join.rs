@@ -33,7 +33,7 @@ pub enum ChatMessage {
 pub struct RoomConnection {
     tx: async_channel::Sender<ChatMessage>,
     rx: async_channel::Receiver<iroh_gossip::api::Event>,
-    task: Task<()>,
+    _task: Task<()>,
 }
 
 impl RoomConnection {
@@ -43,7 +43,6 @@ impl RoomConnection {
     }
 }
 
-#[allow(clippy::type_complexity)]
 fn join_room(
     mut commands: Commands,
     query: Query<(Entity, &ChatRoom), Without<RoomConnection>>,
@@ -59,7 +58,7 @@ fn join_room(
         commands.entity(room_entity).insert(RoomConnection {
             tx: bevy_tx,
             rx: gossip_rx,
-            task: Task::spawn(&tokio, async move {
+            _task: Task::spawn(&tokio, async move {
                 if let Err(e) = room_event_loop(topic, secret_key, gossip, bevy_rx, gossip_tx).await
                 {
                     error!("Failed to join chat room: {e:?}");

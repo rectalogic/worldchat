@@ -29,7 +29,7 @@ pub struct UserLoader {
 #[derive(Component)]
 pub struct User {
     endpoint: Endpoint,
-    router: Router,
+    _router: Router,
     gossip: Gossip,
 }
 
@@ -67,7 +67,7 @@ async fn load_user(secret_key: SecretKey) -> Result<User, BevyError> {
         .spawn();
     Ok(User {
         endpoint,
-        router,
+        _router: router,
         gossip,
     })
 }
