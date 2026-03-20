@@ -12,14 +12,12 @@ const MAX_BOOTSTRAP_RECORDS: u32 = 20;
 
 #[derive(Component)]
 pub struct ChatRoom {
-    name: String,
     topic: RoomTopic,
 }
 
 impl ChatRoom {
-    pub fn new(name: String, keypair: pkarr::Keypair) -> Self {
+    pub fn new(keypair: pkarr::Keypair) -> Self {
         Self {
-            name,
             topic: RoomTopic::new(keypair),
         }
     }

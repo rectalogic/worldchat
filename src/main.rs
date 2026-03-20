@@ -23,10 +23,9 @@ async fn main() {
 
 fn setup(mut commands: Commands) {
     commands
-        .spawn(ChatRoom::new(
-            "foo".into(),
-            pkarr::Keypair::from_secret_key(&TOPIC_KEYPAIR),
-        ))
+        .spawn(ChatRoom::new(pkarr::Keypair::from_secret_key(
+            &TOPIC_KEYPAIR,
+        )))
         .observe(|chat_event: On<ChatRoomEvent>| {
             dbg!(&chat_event);
         });
