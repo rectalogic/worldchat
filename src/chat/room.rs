@@ -8,6 +8,7 @@ use pkarr::dns::rdata::{CNAME, RData};
 use crate::chat::to_z32;
 
 static ROOM_DNS_PREFIX: &str = "worldchat";
+const MAX_BOOTSTRAP_RECORDS: u32 = 20;
 
 #[derive(Component)]
 pub struct ChatRoom {
@@ -40,7 +41,7 @@ impl RoomTopic {
         let public_key = keypair.public_key();
         let public_bytes = public_key.as_bytes();
         Self {
-            topic_id: TopicId::from_bytes(public_bytes.clone()),
+            topic_id: TopicId::from_bytes(*public_bytes),
             dns_publisher_keypair: keypair,
             bootstrap_dns_name: format!("{}_{}", ROOM_DNS_PREFIX, to_z32(public_bytes)),
         }
@@ -48,14 +49,6 @@ impl RoomTopic {
 
     pub fn topic_id(&self) -> TopicId {
         self.topic_id
-    }
-
-    pub fn dns_publisher_keypair(&self) -> &pkarr::Keypair {
-        &self.dns_publisher_keypair
-    }
-
-    pub fn bootstrap_dns_name(&self) -> &str {
-        &self.bootstrap_dns_name
     }
 
     // Resolve room CNAME to target EndpointIds
@@ -67,19 +60,25 @@ impl RoomTopic {
         let mut bootstrap_endpoint_ids = Vec::new();
 
         if let Some(packet) = client
-            .resolve_most_recent(&self.dns_publisher_keypair().public_key())
+            .resolve_most_recent(&self.dns_publisher_keypair.public_key())
             .await
         {
+            let mut count = 0;
             bootstrap_endpoint_ids.extend(
                 packet
-                    .fresh_resource_records(self.bootstrap_dns_name())
+                    .fresh_resource_records(&self.bootstrap_dns_name)
                     .filter_map(|record| {
                         if let RData::CNAME(CNAME(name)) = &record.rdata
                             && let Some(bytes) = name.as_bytes().next()
                             && bytes != endpoint_id.as_bytes()
                             && let Ok(endpoint_str) = str::from_utf8(bytes)
                         {
-                            EndpointId::from_z32(endpoint_str).ok()
+                            count += 1;
+                            if count > MAX_BOOTSTRAP_RECORDS {
+                                None
+                            } else {
+                                EndpointId::from_z32(endpoint_str).ok()
+                            }
                         } else {
                             None
                         }
@@ -104,10 +103,10 @@ impl RoomTopic {
         loop {
             let mut builder = pkarr::SignedPacket::builder();
             if let Some(most_recent) = client
-                .resolve_most_recent(&self.dns_publisher_keypair().public_key())
+                .resolve_most_recent(&self.dns_publisher_keypair.public_key())
                 .await
             {
-                for record in most_recent.fresh_resource_records(self.bootstrap_dns_name()) {
+                for record in most_recent.fresh_resource_records(&self.bootstrap_dns_name) {
                     match record.rdata {
                         RData::CNAME(ref cname) if cname.0 != endpoint_name => {
                             match record.ttl.overflowing_sub(most_recent.elapsed()) {
@@ -126,11 +125,11 @@ impl RoomTopic {
 
             let signed_packet = builder
                 .cname(
-                    self.bootstrap_dns_name().try_into()?,
+                    self.bootstrap_dns_name.as_str().try_into()?,
                     endpoint_name.clone(),
                     ttl,
                 )
-                .sign(self.dns_publisher_keypair())?;
+                .sign(&self.dns_publisher_keypair)?;
 
             if let Err(e) = client.publish(&signed_packet, None).await {
                 warn!("Failed to publish CNAME: {e:?}");
