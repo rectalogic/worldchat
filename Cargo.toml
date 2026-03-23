@@ -3,7 +3,6 @@ name = "worldchat"
 version = "0.1.0"
 authors = ["Andrew Wason <rectalogic@rectalogic.com>"]
 edition = "2024"
-default-run = "worldchat"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -11,18 +10,14 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 async-channel = "2.5.0"
 base32 = "0.5.1"
-bevy = { version = "0.18.1", default-features = false, features = ["2d"] }
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "web", "webgl2"] }
+futures-timer = { version = "3.0.3", features = ["wasm-bindgen"] }
 iroh = { version = "0.97", default-features = false }
 iroh-gossip = { version = "0.97", default-features = false, features = ["net"] }
 pkarr = { version = "5.0.3", default-features = false, features = ["relays"] }
-tokio = { version = "1", default-features = false, features = ["sync"] }
-tokio-stream = "0.1.18"
-
-[target.'cfg(not(target_family = "wasm"))'.dependencies]
 rand = "0.9.2"
-
-[target.wasm32-unknown-unknown.dependencies]
 wasm-bindgen = "0.2.84"
+wasm-bindgen-futures = "0.4.64"
 
 [profile.release]
 opt-level = "s"

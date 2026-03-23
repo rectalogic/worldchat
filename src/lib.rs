@@ -1,12 +1,11 @@
 mod app;
 mod chat;
-mod tokio;
 
 pub use app::AppPlugin;
+use bevy::prelude::*;
+use wasm_bindgen::prelude::*;
 
-#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
-#[tokio::main]
-async fn run() {
+pub fn start() {
     App::new().add_plugins(AppPlugin).run();
 }

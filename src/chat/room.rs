@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
+use futures_timer::Delay;
 use iroh::{EndpointId, endpoint_info::EndpointIdExt};
 use iroh_gossip::TopicId;
 use pkarr::dns::rdata::{CNAME, RData};
@@ -131,9 +132,9 @@ impl RoomTopic {
 
             if let Err(e) = client.publish(&signed_packet, None).await {
                 warn!("Failed to publish CNAME: {e:?}");
-                tokio::time::sleep(delay / 3).await;
+                Delay::new(delay / 3).await
             } else {
-                tokio::time::sleep(delay).await;
+                Delay::new(delay).await
             }
         }
     }

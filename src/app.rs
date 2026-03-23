@@ -18,8 +18,7 @@ impl Plugin for AppPlugin {
                 secret_key: SecretKey::generate(&mut rand::rng()),
             },
         ))
-        .add_systems(Startup, setup)
-        .run();
+        .add_systems(Startup, setup);
     }
 }
 
