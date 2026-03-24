@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use iroh::SecretKey;
 
 pub mod join;
+mod message;
 pub mod room;
 mod user;
 

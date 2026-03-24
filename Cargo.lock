@@ -8486,7 +8486,9 @@ dependencies = [
  "iroh",
  "iroh-gossip",
  "pkarr",
+ "postcard",
  "rand",
+ "serde",
  "wasm-bindgen",
  "wasm-bindgen-futures",
 ]

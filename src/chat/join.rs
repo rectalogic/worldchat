@@ -9,9 +9,11 @@ use iroh::SecretKey;
 use iroh_gossip::Gossip;
 use pkarr::Client;
 
-use crate::chat::room::RoomTopic;
-
-use super::{room::ChatRoom, user::User};
+use super::{
+    message::{ChatMessage, GossipEvent, SignedMessage},
+    room::{ChatRoom, RoomTopic},
+    user::User,
+};
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Update, (join_room, handle_gossip_event));
@@ -20,18 +22,13 @@ pub fn plugin(app: &mut App) {
 #[derive(EntityEvent, Debug)]
 pub struct ChatRoomEvent {
     entity: Entity,
-    pub event: iroh_gossip::api::Event,
-}
-
-#[derive(Debug)]
-pub enum ChatMessage {
-    Message(String),
+    pub event: GossipEvent,
 }
 
 #[derive(Component)]
 pub struct RoomConnection {
     tx: async_channel::Sender<ChatMessage>,
-    rx: async_channel::Receiver<iroh_gossip::api::Event>,
+    rx: async_channel::Receiver<GossipEvent>,
     _task: Task<()>,
 }
 
@@ -79,7 +76,7 @@ async fn room_event_loop(
     secret_key: SecretKey,
     gossip: Gossip,
     bevy_rx: async_channel::Receiver<ChatMessage>,
-    gossip_tx: async_channel::Sender<iroh_gossip::api::Event>,
+    gossip_tx: async_channel::Sender<GossipEvent>,
 ) -> Result<(), BevyError> {
     let client = Client::builder().build()?;
     let gossip_topic = gossip
@@ -91,11 +88,9 @@ async fn room_event_loop(
         )
         .await?;
 
+    let endpoint_id = secret_key.public();
     let _endpoint_publisher_task = IoTaskPool::get().spawn(async move {
-        if let Err(e) = topic
-            .publish_endpoint_cname(&client, secret_key.public(), 15)
-            .await
-        {
+        if let Err(e) = topic.publish_endpoint_cname(&client, endpoint_id, 15).await {
             error!("Endpoint CNAME publisher failed: {e:?}")
         }
     });
@@ -109,16 +104,22 @@ async fn room_event_loop(
 
     while let Some(e) = events.next().await {
         match e {
-            StreamItem::ChatMessage(message) => match message {
-                ChatMessage::Message(message) => {
-                    if let Err(e) = gossip_sender.broadcast(message.into()).await {
-                        error!("Failed to send message: {e:?}")
-                    }
+            StreamItem::ChatMessage(message) => {
+                let signed_message = SignedMessage::sign_and_encode(&secret_key, message)?;
+                if let Err(e) = gossip_sender.broadcast(signed_message.into()).await {
+                    error!("Failed to send message: {e:?}")
                 }
-            },
+            }
             StreamItem::GossipEvent(result) => match result {
                 Ok(event) => {
-                    if let Err(e) = gossip_tx.send(event).await {
+                    let gossip_event: GossipEvent = match event.try_into() {
+                        Ok(event) => event,
+                        Err(err) => {
+                            warn!("received invalid message: {err}");
+                            continue;
+                        }
+                    };
+                    if let Err(e) = gossip_tx.send(gossip_event).await {
                         error!("Failed to send Gossip event to Bevy: {e:?}");
                     }
                 }
