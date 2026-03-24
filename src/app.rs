@@ -28,6 +28,6 @@ fn setup(mut commands: Commands) {
             &TOPIC_KEYPAIR,
         )))
         .observe(|chat_event: On<ChatRoomEvent>| {
-            dbg!(&chat_event);
+            info!("gossip event {:?}", &chat_event);
         });
 }
