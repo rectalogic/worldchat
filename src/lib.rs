@@ -1,5 +1,6 @@
 mod app;
 mod chat;
+mod irc;
 
 use std::{
     cell::{OnceCell, RefCell},
@@ -13,76 +14,75 @@ use futures_util::{
     Sink, SinkExt, Stream, StreamExt,
     stream::{SplitSink, SplitStream},
 };
+use irc_proto::{
+    command::{CapSubCommand, Command},
+    response::Response,
+};
+use tokio_tungstenite_wasm as ws;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub fn start() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins((
+            DefaultPlugins,
+            irc::IrcPlugin {
+                server: "wss://fiery.swiftirc.net:4443".into(),
+                user: "u007".into(),
+            },
+        ))
         .add_systems(Startup, setup)
         .run();
 
     // App::new().add_plugins(AppPlugin).run();
 }
 
+struct WsSender(SplitSink<ws::WebSocketStream, ws::Message>);
+
+impl WsSender {
+    async fn send(&mut self, command: &Command) -> ws::error::Result<()> {
+        self.0.send(ws::Message::text(String::from(command))).await
+    }
+}
+
 fn setup() {
     IoTaskPool::get()
         .spawn(async move {
-            let ws = tokio_tungstenite_wasm::connect_with_protocols(
-                "wss://fiery.swiftirc.net:4443",
-                &["text.ircv3.net"],
-            )
-            .await
-            .unwrap();
-            let (mut tx, mut rx) = ws.split();
+            let ws =
+                ws::connect_with_protocols("wss://fiery.swiftirc.net:4443", &["text.ircv3.net"])
+                    .await
+                    .unwrap();
+            let (tx, mut rx) = ws.split();
+            let mut tx = WsSender(tx);
 
             // Send a CAP END to signify that we're IRCv3-compliant (and to end negotiations!).
-            let cap = irc_proto::command::Command::CAP(
-                None,
-                irc_proto::command::CapSubCommand::END,
-                None,
-                None,
-            );
-            let s = String::from(&cap);
-            tx.send(tokio_tungstenite_wasm::Message::text(&s))
+            tx.send(&Command::CAP(None, CapSubCommand::END, None, None))
                 .await
                 .unwrap();
 
-            let user =
-                irc_proto::command::Command::USER("user007".into(), "0".into(), "user007".into());
-            let s = String::from(&user);
-            tx.send(tokio_tungstenite_wasm::Message::text(&s))
-                .await
-                .unwrap();
+            tx.send(&Command::USER(
+                "user007".into(),
+                "0".into(),
+                "user007".into(),
+            ))
+            .await
+            .unwrap();
 
-            let nick = irc_proto::command::Command::NICK("user007".into());
-            let s = String::from(&nick);
-            tx.send(tokio_tungstenite_wasm::Message::text(&s))
-                .await
-                .unwrap();
+            tx.send(&Command::NICK("user007".into())).await.unwrap();
 
             while let Some(response) = rx.next().await {
-                if let Ok(tokio_tungstenite_wasm::Message::Text(bytes)) = response
+                if let Ok(ws::Message::Text(bytes)) = response
                     && let Ok(message) =
                         irc_proto::message::Message::from_str(bytes.to_string().as_str())
                 {
                     info!("{message:?}");
                     match message.command {
-                        irc_proto::command::Command::PING(server1, server2) => {
-                            let pong = irc_proto::command::Command::PONG(server1, server2);
-                            let s = String::from(&pong);
-                            tx.send(tokio_tungstenite_wasm::Message::text(&s))
-                                .await
-                                .unwrap();
+                        Command::PING(server1, server2) => {
+                            tx.send(&Command::PONG(server1, server2)).await.unwrap();
                         }
-                        irc_proto::command::Command::UserMODE(..) => {
-                            let join = irc_proto::command::Command::JOIN(
-                                "#bevyworldchat".into(),
-                                None,
-                                None,
-                            );
-                            let s = String::from(&join);
-                            tx.send(tokio_tungstenite_wasm::Message::text(&s))
+                        Command::Response(Response::RPL_ENDOFMOTD, _)
+                        | Command::Response(Response::ERR_NOMOTD, _) => {
+                            tx.send(&Command::JOIN("#bevyworldchat".into(), None, None))
                                 .await
                                 .unwrap();
                             info!("joined channel");
