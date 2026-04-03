@@ -1,4 +1,7 @@
-use super::server::Server;
+use super::{
+    server::{Server, ServerChannels},
+    user::UserOfChannel,
+};
 use bevy::prelude::*;
 
 pub struct ChannelPlugin;
@@ -13,21 +16,41 @@ impl Plugin for ChannelPlugin {
 }
 
 #[derive(Component, Debug)]
+#[relationship(relationship_target = ServerChannels)]
+pub struct ChannelOfServer(Entity);
+
+#[derive(Component, Debug)]
+#[relationship_target(relationship = UserOfChannel, linked_spawn)]
+pub struct ChannelUsers(Vec<Entity>);
+
+#[derive(Component, Debug)]
 pub struct Channel {
-    name: String,
+    pub name: String,
 }
 
 //XXX listen for server events, fire EntityEvents for the corresponding channel
 fn handle_server_events() {}
 
-fn on_add(add: On<Add, Channel>, query: Query<&Channel>, mut server: ResMut<Server>) {
-    if let Ok(channel) = query.get(add.entity) {
+fn on_add(
+    add: On<Add, Channel>,
+    query: Query<(&Channel, &ChannelOfServer)>,
+    mut servers: Query<&mut Server>,
+) {
+    if let Ok((channel, channel_of_server)) = query.get(add.entity)
+        && let Ok(mut server) = servers.get_mut(channel_of_server.0)
+    {
         server.join((add.entity, channel.name.clone()));
     }
 }
 
-fn on_remove(remove: On<Remove, Channel>, query: Query<&Channel>, mut server: ResMut<Server>) {
-    if let Ok(channel) = query.get(remove.entity) {
+fn on_remove(
+    remove: On<Remove, Channel>,
+    query: Query<(&Channel, &ChannelOfServer)>,
+    mut servers: Query<&mut Server>,
+) {
+    if let Ok((channel, channel_of_server)) = query.get(remove.entity)
+        && let Ok(mut server) = servers.get_mut(channel_of_server.0)
+    {
         server.leave((remove.entity, channel.name.clone()));
     }
 }

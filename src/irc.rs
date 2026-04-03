@@ -1,29 +1,17 @@
-use bevy::{prelude::*, tasks::IoTaskPool};
-use futures_util::{
-    Sink, SinkExt, Stream, StreamExt,
-    stream::{SplitSink, SplitStream},
-};
-use irc_proto::{
-    command::{CapSubCommand, Command},
-    response::Response,
-};
-use tokio_tungstenite_wasm as ws;
-use wasm_bindgen::prelude::*;
+use bevy::prelude::*;
 
 mod channel;
 mod server;
+mod user;
 
-pub struct IrcPlugin {
-    pub server: String,
-    pub user: String,
-}
+pub use channel::{Channel, ChannelOfServer};
+pub use server::{Server, ServerChannels};
+
+pub struct IrcPlugin;
 
 impl Plugin for IrcPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(server::ServerPlugin {
-            server: self.server.clone(),
-            user: self.user.clone(),
-        });
+        app.add_plugins(server::ServerPlugin);
         //XXX Server should be a resource, it can send messages per channel subscription?
         // futures_util::stream::select_all::select_all to process a bunch of channels plus the server multiplexed messages
         //

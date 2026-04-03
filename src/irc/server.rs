@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use super::channel::{Channel, ChannelOfServer};
 use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
@@ -15,15 +16,10 @@ use irc_proto::{
 use tokio_tungstenite_wasm as ws;
 use wasm_bindgen::prelude::*;
 
-pub struct ServerPlugin {
-    pub server: String,
-    pub user: String,
-}
+pub struct ServerPlugin;
 
 impl Plugin for ServerPlugin {
-    fn build(&self, app: &mut App) {
-        app.insert_resource(Server::new(self.server.clone(), self.user.clone()));
-    }
+    fn build(&self, app: &mut App) {}
 }
 
 struct WsSender(SplitSink<ws::WebSocketStream, ws::Message>);
@@ -34,29 +30,38 @@ impl WsSender {
     }
 }
 
-#[derive(Resource, Debug)]
+//XXX username needs to come from user at runtime, make this Component and spawn task On<Add, Server>
+// XXX match Channel to Server by Entity? pass Server Entity to Channel so we can route messages?
+// use Relationship?
+// also need User and relationship to Channels they are in - ChannelUsers(Vec<Entity)) and UserOfChannel(Entity)
+
+#[derive(Component, Debug)]
+#[relationship_target(relationship = ChannelOfServer, linked_spawn)]
+pub struct ServerChannels(Vec<Entity>);
+
+#[derive(Component, Debug)]
 pub struct Server {
     task: Task<()>,
     user: String,
 }
 
 impl Server {
-    fn new(server_url: String, user: String) -> Self {
+    pub fn new(server_url: String, user: String) -> Self {
         let u = user.clone();
         let task = IoTaskPool::get().spawn(async move {
             if let Err(e) = Self::serve(server_url, u).await {
-                error!("Failed to join IRC server: {e:?}");
+                error!("Failed to connect to IRC server: {e:?}");
                 //XXX handle ws errors, sleep and retry
             }
         });
         Self { task, user }
     }
 
-    pub fn join(&mut self, channel: (Entity, String)) {
+    pub(crate) fn join(&mut self, channel: (Entity, String)) {
         //XXX tx a join event
     }
 
-    pub fn leave(&mut self, channel: (Entity, String)) {
+    pub(crate) fn leave(&mut self, channel: (Entity, String)) {
         //XXX tx a leave event
     }
 
@@ -74,7 +79,7 @@ impl Server {
             .send(&Command::USER(user.clone(), "0".into(), user.clone()))
             .await?;
 
-        ws_tx.send(&Command::NICK(user)).await;
+        ws_tx.send(&Command::NICK(user)).await?;
 
         while let Some(response) = ws_rx.next().await {
             if let Ok(ws::Message::Text(bytes)) = response
@@ -97,6 +102,8 @@ impl Server {
                 }
             }
         }
+        //XXX once we get MOTD above, start futures_util::stream::select_all::select_all to listen for join and privmsg messages from bevy
+
         Ok(())
     }
 }
