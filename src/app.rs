@@ -18,6 +18,6 @@ fn setup(mut commands: Commands) {
             "user008".into(),
         ))
         .with_related::<ChannelOfServer>(Channel {
-            name: "bevyworldchat".into(),
+            name: "#bevyworldchat".into(),
         });
 }

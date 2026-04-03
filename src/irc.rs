@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 mod channel;
+mod message;
 mod server;
 mod user;
 
