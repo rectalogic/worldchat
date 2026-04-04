@@ -1,4 +1,7 @@
+use std::borrow::Cow;
+
 use super::{
+    message::IrcControl,
     server::{Server, ServerChannels},
     user::UserOfChannel,
 };
@@ -8,9 +11,7 @@ pub struct ChannelPlugin;
 
 impl Plugin for ChannelPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_remove)
-            .add_observer(on_add)
-            .add_systems(Update, handle_server_events);
+        app.add_observer(on_remove).add_observer(on_add);
     }
 }
 
@@ -23,35 +24,49 @@ pub struct ChannelOfServer(Entity);
 pub struct ChannelUsers(Vec<Entity>);
 
 #[derive(Component, Debug)]
-pub struct Channel {
-    pub name: String,
+pub struct Channel;
+
+#[derive(Bundle, Debug)]
+pub struct ChannelBundle {
+    name: Name,
+    channel: Channel,
 }
 
-//XXX listen for server events, fire EntityEvents for the corresponding channel
-fn handle_server_events() {}
+impl ChannelBundle {
+    pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
+        ChannelBundle {
+            name: Name::new(name),
+            channel: Channel,
+        }
+    }
+}
 
-//XXX move these into server, it can also maintain name->Entity map
-// XXX similary for user->Entity, keep that in Channel
 fn on_add(
     add: On<Add, Channel>,
-    query: Query<(&Channel, &ChannelOfServer)>,
+    query: Query<(&Name, &ChannelOfServer), With<Channel>>,
     mut servers: Query<&mut Server>,
-) {
-    if let Ok((channel, channel_of_server)) = query.get(add.entity)
+) -> Result<(), BevyError> {
+    if let Ok((name, channel_of_server)) = query.get(add.entity)
         && let Ok(mut server) = servers.get_mut(channel_of_server.0)
     {
-        server.join(channel.name.clone(), add.entity);
+        server.send(IrcControl::Join {
+            channel: name.to_string(),
+        })?;
     }
+    Ok(())
 }
 
 fn on_remove(
     remove: On<Remove, Channel>,
-    query: Query<(&Channel, &ChannelOfServer)>,
+    query: Query<(&Name, &ChannelOfServer), With<Channel>>,
     mut servers: Query<&mut Server>,
-) {
-    if let Ok((channel, channel_of_server)) = query.get(remove.entity)
+) -> Result<(), BevyError> {
+    if let Ok((name, channel_of_server)) = query.get(remove.entity)
         && let Ok(mut server) = servers.get_mut(channel_of_server.0)
     {
-        server.leave(channel.name.clone());
+        server.send(IrcControl::Part {
+            channel: name.to_string(),
+        })?;
     }
+    Ok(())
 }

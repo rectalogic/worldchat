@@ -1,5 +1,5 @@
 use crate::irc::IrcPlugin;
-use crate::irc::{Channel, ChannelOfServer, Server};
+use crate::irc::{ChannelBundle, ChannelOfServer, Server};
 use bevy::prelude::*;
 
 pub struct AppPlugin;
@@ -17,7 +17,5 @@ fn setup(mut commands: Commands) {
             "wss://fiery.swiftirc.net:4443".into(),
             "user008".into(),
         ))
-        .with_related::<ChannelOfServer>(Channel {
-            name: "#bevyworldchat".into(),
-        });
+        .with_related::<ChannelOfServer>(ChannelBundle::new("#bevyworldchat"));
 }

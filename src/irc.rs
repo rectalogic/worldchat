@@ -5,7 +5,7 @@ mod message;
 mod server;
 mod user;
 
-pub use channel::{Channel, ChannelOfServer};
+pub use channel::{ChannelBundle, ChannelOfServer};
 pub use server::{Server, ServerChannels};
 
 pub struct IrcPlugin;
