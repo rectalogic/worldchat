@@ -4,23 +4,20 @@ use super::channel::ChannelUsers;
 use bevy::prelude::*;
 
 #[derive(Component, Debug)]
-pub struct User;
-
-#[derive(Component, Debug)]
 #[relationship(relationship_target = ChannelUsers)]
 pub struct UserOfChannel(Entity);
 
 #[derive(Bundle, Debug)]
 pub struct UserBundle {
     name: Name,
-    user: User,
+    channel: UserOfChannel,
 }
 
 impl UserBundle {
-    pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
+    pub fn new(name: impl Into<Cow<'static, str>>, channel: Entity) -> Self {
         UserBundle {
             name: Name::new(name),
-            user: User,
+            channel: UserOfChannel(channel),
         }
     }
 }

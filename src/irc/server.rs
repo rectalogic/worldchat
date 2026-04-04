@@ -1,11 +1,12 @@
 use std::{pin::pin, str::FromStr};
 
 use super::{
-    channel::{Channel, ChannelOfServer},
+    channel::{ChannelOfServer, ChannelPlugin, ChannelUsers},
     message::{IrcControl, IrcEvent},
-    user::{User, UserOfChannel},
+    user::UserOfChannel,
 };
 use bevy::{
+    ecs::relationship::Relationship,
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
@@ -25,7 +26,8 @@ pub struct ServerPlugin;
 
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_add)
+        app.add_plugins(ChannelPlugin)
+            .add_observer(on_add)
             .add_systems(Update, handle_server_events);
     }
 }
@@ -42,11 +44,6 @@ enum StreamMessage {
     IrcControl(IrcControl),
     WsMessage(ws::error::Result<ws::Message>),
 }
-
-//XXX username needs to come from user at runtime, make this Component and spawn task On<Add, Server>
-// XXX match Channel to Server by Entity? pass Server Entity to Channel so we can route messages?
-// use Relationship?
-// also need User and relationship to Channels they are in - ChannelUsers(Vec<Entity)) and UserOfChannel(Entity)
 
 #[derive(Component, Debug)]
 #[relationship_target(relationship = ChannelOfServer, linked_spawn)]
@@ -163,6 +160,13 @@ impl Server {
                             } => {
                                 irc_tx.send(IrcEvent::UserJoined { channel, user }).await?;
                             }
+                            IrcMessage {
+                                command: Command::PART(channel, ..),
+                                prefix: Some(Prefix::Nickname(user, ..)),
+                                ..
+                            } => {
+                                irc_tx.send(IrcEvent::UserParted { channel, user }).await?;
+                            }
                             _ => {}
                         }
                     } else {
@@ -197,19 +201,82 @@ fn on_add(add: On<Add, Server>, mut servers: Query<&mut Server>) {
 
 //XXX listen for server events, fire EntityEvents for the corresponding channel
 fn handle_server_events(
-    servers: Query<&Server>,
-    channels: Query<(&Name, &ChannelOfServer), With<Channel>>,
-    users: Query<(&Name, &UserOfChannel), With<User>>,
+    mut commands: Commands,
+    servers: Query<(Entity, &Server)>,
+    server_channels: Query<&ServerChannels>,
+    channels: Query<&Name, With<ChannelOfServer>>,
+    channel_users: Query<&ChannelUsers>,
+    users: Query<&Name, With<UserOfChannel>>,
 ) {
-    for server in servers {
+    for (server_entity, server) in servers {
         if let Some(ref server_task) = server.server_task {
             while let Ok(event) = server_task.rx.try_recv() {
                 match event {
-                    //XXX related query
-                    IrcEvent::UserJoined { channel, user } => todo!(),
-                    IrcEvent::UserParted { channel, user } => todo!(),
-                }
+                    IrcEvent::UserJoined { channel, user } => {
+                        if let Some((channel_entity, user_entity)) = find_channel_user(
+                            Name::new(channel),
+                            Name::new(user),
+                            server_entity,
+                            server_channels,
+                            channels,
+                            channel_users,
+                            users,
+                        ) {
+                            //XXX spawn bundle and broadcast our position - trigger channel entity event
+                        }
+                    }
+                    IrcEvent::UserParted { channel, user } => {
+                        if let Some((_, user_entity)) = find_channel_user(
+                            Name::new(channel),
+                            Name::new(user),
+                            server_entity,
+                            server_channels,
+                            channels,
+                            channel_users,
+                            users,
+                        ) {
+                            commands.entity(user_entity).despawn(); //XXX trigger user entity event, observer can despawn
+                        }
+                    }
+                };
             }
         }
+    }
+}
+
+fn find_relationship_source_named<RS: Relationship, RT: RelationshipTarget>(
+    source_name: Name,
+    target_entity: Entity,
+    targets: Query<&RT>,
+    sources: Query<&Name, With<RS>>,
+) -> Option<Entity> {
+    targets.relationship_sources::<RT>(target_entity).find(
+        |source_entity| matches!(sources.get(*source_entity), Ok(name) if *name == source_name),
+    )
+}
+
+fn find_channel_user(
+    channel: Name,
+    user: Name,
+    server_entity: Entity,
+    server_channels: Query<&ServerChannels>,
+    channels: Query<&Name, With<ChannelOfServer>>,
+    channel_users: Query<&ChannelUsers>,
+    users: Query<&Name, With<UserOfChannel>>,
+) -> Option<(Entity, Entity)> {
+    if let Some(channel_entity) = find_relationship_source_named::<ChannelOfServer, ServerChannels>(
+        channel,
+        server_entity,
+        server_channels,
+        channels,
+    ) && let Some(user_entity) = find_relationship_source_named::<UserOfChannel, ChannelUsers>(
+        user,
+        channel_entity,
+        channel_users,
+        users,
+    ) {
+        Some((channel_entity, user_entity))
+    } else {
+        None
     }
 }

@@ -23,27 +23,22 @@ pub struct ChannelOfServer(Entity);
 #[relationship_target(relationship = UserOfChannel, linked_spawn)]
 pub struct ChannelUsers(Vec<Entity>);
 
-#[derive(Component, Debug)]
-pub struct Channel;
-
 #[derive(Bundle, Debug)]
 pub struct ChannelBundle {
     name: Name,
-    channel: Channel,
 }
 
 impl ChannelBundle {
     pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
         ChannelBundle {
             name: Name::new(name),
-            channel: Channel,
         }
     }
 }
 
 fn on_add(
-    add: On<Add, Channel>,
-    query: Query<(&Name, &ChannelOfServer), With<Channel>>,
+    add: On<Add, ChannelOfServer>,
+    query: Query<(&Name, &ChannelOfServer)>,
     mut servers: Query<&mut Server>,
 ) -> Result<(), BevyError> {
     if let Ok((name, channel_of_server)) = query.get(add.entity)
@@ -57,8 +52,8 @@ fn on_add(
 }
 
 fn on_remove(
-    remove: On<Remove, Channel>,
-    query: Query<(&Name, &ChannelOfServer), With<Channel>>,
+    remove: On<Remove, ChannelOfServer>,
+    query: Query<(&Name, &ChannelOfServer)>,
     mut servers: Query<&mut Server>,
 ) -> Result<(), BevyError> {
     if let Ok((name, channel_of_server)) = query.get(remove.entity)

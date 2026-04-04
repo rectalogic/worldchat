@@ -15,7 +15,7 @@ fn setup(mut commands: Commands) {
     commands
         .spawn(Server::new(
             "wss://fiery.swiftirc.net:4443".into(),
-            "user008".into(),
+            "user008".into(), //XXX needs to come from user input
         ))
         .with_related::<ChannelOfServer>(ChannelBundle::new("#bevyworldchat"));
 }
