@@ -72,7 +72,11 @@ impl Server {
         }
     }
 
-    pub(crate) fn send(&mut self, message: IrcControl) -> Result<(), BevyError> {
+    pub fn user(&self) -> &str {
+        &self.user
+    }
+
+    pub fn send(&mut self, message: IrcControl) -> Result<(), BevyError> {
         if let Some(ServerTask { ref tx, .. }) = self.server_task {
             tx.send_blocking(message)?;
         }
@@ -96,7 +100,7 @@ impl Server {
 
     async fn serve(
         server_url: String,
-        user: String,
+        server_user: String,
         bevy_rx: async_channel::Receiver<IrcControl>,
         irc_tx: async_channel::Sender<IrcEvent>,
     ) -> Result<(), BevyError> {
@@ -110,10 +114,15 @@ impl Server {
             .await?;
 
         ws_tx
-            .send(&Command::USER(user.clone(), "0".into(), user.clone()))
+            .send(&Command::USER(
+                server_user.clone(),
+                "0".into(),
+                server_user.clone(),
+            ))
             .await?;
 
-        ws_tx.send(&Command::NICK(user)).await?;
+        //XXX need to handle nick denial (in use)
+        ws_tx.send(&Command::NICK(server_user.clone())).await?;
 
         while let Some(response) = ws_rx.next().await {
             if let Ok(ws::Message::Text(bytes)) = response
@@ -167,6 +176,13 @@ impl Server {
                             } => {
                                 irc_tx.send(IrcEvent::UserParted { channel, user }).await?;
                             }
+                            IrcMessage {
+                                command: Command::QUIT(_),
+                                prefix: Some(Prefix::Nickname(user, ..)),
+                                ..
+                            } => {
+                                irc_tx.send(IrcEvent::UserQuit { user }).await?;
+                            }
                             _ => {}
                         }
                     } else {
@@ -204,39 +220,53 @@ fn handle_server_events(
     mut commands: Commands,
     servers: Query<(Entity, &Server)>,
     server_channels: Query<&ServerChannels>,
-    channels: Query<&Name, With<ChannelOfServer>>,
+    channels: Query<(Entity, &Name), With<ChannelOfServer>>,
     channel_users: Query<&ChannelUsers>,
-    users: Query<&Name, With<UserOfChannel>>,
+    users: Query<(Entity, &Name), With<UserOfChannel>>,
 ) {
     for (server_entity, server) in servers {
         if let Some(ref server_task) = server.server_task {
             while let Ok(event) = server_task.rx.try_recv() {
                 match event {
                     IrcEvent::UserJoined { channel, user } => {
-                        if let Some((channel_entity, user_entity)) = find_channel_user(
-                            Name::new(channel),
-                            Name::new(user),
+                        let user_name = Name::new(user);
+                        if let (Some(channel_entity), None) = find_channel_user(
+                            &Name::new(channel),
+                            &user_name,
                             server_entity,
                             server_channels,
                             channels,
                             channel_users,
                             users,
                         ) {
+                            commands
+                                .entity(channel_entity)
+                                .with_related::<UserOfChannel>(user_name);
+
                             //XXX spawn bundle and broadcast our position - trigger channel entity event
+                            // XXX add User marker and app can observe Add and insert UI components and broadcast
                         }
                     }
                     IrcEvent::UserParted { channel, user } => {
-                        if let Some((_, user_entity)) = find_channel_user(
-                            Name::new(channel),
-                            Name::new(user),
+                        if let (_, Some(user_entity)) = find_channel_user(
+                            &Name::new(channel),
+                            &Name::new(user),
                             server_entity,
                             server_channels,
                             channels,
                             channel_users,
                             users,
                         ) {
-                            commands.entity(user_entity).despawn(); //XXX trigger user entity event, observer can despawn
+                            commands.entity(user_entity).despawn();
                         }
+                    }
+                    IrcEvent::UserQuit { user } => {
+                        let user_name = Name::new(user);
+                        // Despawn user in all channels
+                        users
+                            .iter()
+                            .filter(|&(_, user)| *user == user_name)
+                            .for_each(|(user_entity, _)| commands.entity(user_entity).despawn());
                     }
                 };
             }
@@ -245,38 +275,36 @@ fn handle_server_events(
 }
 
 fn find_relationship_source_named<RS: Relationship, RT: RelationshipTarget>(
-    source_name: Name,
+    source_name: &Name,
     target_entity: Entity,
     targets: Query<&RT>,
-    sources: Query<&Name, With<RS>>,
+    sources: Query<(Entity, &Name), With<RS>>,
 ) -> Option<Entity> {
     targets.relationship_sources::<RT>(target_entity).find(
-        |source_entity| matches!(sources.get(*source_entity), Ok(name) if *name == source_name),
+        |source_entity| matches!(sources.get(*source_entity), Ok((_, name)) if name == source_name),
     )
 }
 
 fn find_channel_user(
-    channel: Name,
-    user: Name,
+    channel: &Name,
+    user: &Name,
     server_entity: Entity,
     server_channels: Query<&ServerChannels>,
-    channels: Query<&Name, With<ChannelOfServer>>,
+    channels: Query<(Entity, &Name), With<ChannelOfServer>>,
     channel_users: Query<&ChannelUsers>,
-    users: Query<&Name, With<UserOfChannel>>,
-) -> Option<(Entity, Entity)> {
-    if let Some(channel_entity) = find_relationship_source_named::<ChannelOfServer, ServerChannels>(
-        channel,
-        server_entity,
-        server_channels,
-        channels,
-    ) && let Some(user_entity) = find_relationship_source_named::<UserOfChannel, ChannelUsers>(
-        user,
-        channel_entity,
-        channel_users,
-        users,
-    ) {
-        Some((channel_entity, user_entity))
+    users: Query<(Entity, &Name), With<UserOfChannel>>,
+) -> (Option<Entity>, Option<Entity>) {
+    if let Some(channel_entity) =
+        find_relationship_source_named(channel, server_entity, server_channels, channels)
+    {
+        if let Some(user_entity) =
+            find_relationship_source_named(user, channel_entity, channel_users, users)
+        {
+            (Some(channel_entity), Some(user_entity))
+        } else {
+            (Some(channel_entity), None)
+        }
     } else {
-        None
+        (None, None)
     }
 }

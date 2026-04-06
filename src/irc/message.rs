@@ -7,4 +7,5 @@ pub enum IrcControl {
 pub enum IrcEvent {
     UserJoined { channel: String, user: String },
     UserParted { channel: String, user: String },
+    UserQuit { user: String },
 }

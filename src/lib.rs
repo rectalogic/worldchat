@@ -1,5 +1,6 @@
 mod app;
 mod irc;
+mod world;
 use bevy::prelude::*;
 use wasm_bindgen::prelude::*;
 
