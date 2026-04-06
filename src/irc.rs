@@ -5,7 +5,7 @@ mod message;
 mod server;
 mod user;
 
-pub use channel::{ChannelBundle, ChannelOfServer};
+pub use channel::ChannelOfServer;
 pub use message::IrcControl;
 pub use server::Server;
 pub use user::UserOfChannel;

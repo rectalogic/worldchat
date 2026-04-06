@@ -23,19 +23,6 @@ pub struct ChannelOfServer(Entity);
 #[relationship_target(relationship = UserOfChannel, linked_spawn)]
 pub struct ChannelUsers(Vec<Entity>);
 
-#[derive(Bundle, Debug)]
-pub struct ChannelBundle {
-    name: Name,
-}
-
-impl ChannelBundle {
-    pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
-        ChannelBundle {
-            name: Name::new(name),
-        }
-    }
-}
-
 fn on_add(
     add: On<Add, ChannelOfServer>,
     query: Query<(&Name, &ChannelOfServer)>,

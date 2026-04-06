@@ -78,7 +78,7 @@ impl Server {
 
     pub fn send(&mut self, message: IrcControl) -> Result<(), BevyError> {
         if let Some(ServerTask { ref tx, .. }) = self.server_task {
-            tx.send_blocking(message)?;
+            tx.try_send(message)?;
         }
         Ok(())
     }

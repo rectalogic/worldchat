@@ -1,9 +1,11 @@
+#[derive(Debug)]
 pub enum IrcControl {
     Join { channel: String },
     Part { channel: String },
     Message { channel: String, message: String },
 }
 
+#[derive(Debug)]
 pub enum IrcEvent {
     UserJoined { channel: String, user: String },
     UserParted { channel: String, user: String },
