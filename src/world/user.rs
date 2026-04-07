@@ -1,12 +1,15 @@
 use bevy::{ecs::relationship::Relationship, prelude::*};
 
-use crate::irc::{ChannelOfServer, IrcControl, Server, UserOfChannel};
+use crate::{
+    UserMessage,
+    irc::{ChannelOfServer, IrcControl, Server, UserOfChannel},
+};
 
 pub struct UserPlugin;
 
 impl Plugin for UserPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_add);
+        app.add_observer(on_add).add_observer(on_message);
     }
 }
 
@@ -34,4 +37,9 @@ fn on_add(
         })?;
     }
     Ok(())
+}
+
+fn on_message(message: On<UserMessage>) {
+    //XXX message.user_entity could be server or remote user
+    // XXX add visual message component to either one displaying last message
 }

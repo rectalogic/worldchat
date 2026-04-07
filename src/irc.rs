@@ -8,7 +8,7 @@ mod user;
 pub use channel::ChannelOfServer;
 pub use message::IrcControl;
 pub use server::Server;
-pub use user::UserOfChannel;
+pub use user::{UserMessage, UserOfChannel};
 
 pub struct IrcPlugin;
 

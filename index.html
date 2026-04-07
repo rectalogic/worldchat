@@ -15,9 +15,28 @@
         <script type="module">
             import init, { start } from "./pkg/worldchat.js";
             import("./restart-audio-context.js");
+
+            document.addEventListener("DOMContentLoaded", () => {
+                const button = document.getElementById("start");
+                button.addEventListener("click", () => {
+                    const username = document.getElementById("username").value;
+                    if (username) {
+                        document.getElementById("startUI").remove();
+                        start(username);
+                    }
+                });
+            });
+
             await init();
-            start();
         </script>
     </head>
-    <body></body>
+    <body>
+        <div id="startUI">
+            <label>
+                Enter username (no spaces)
+                <input id="username" type="text" />
+            </label>
+            <button id="start">Start</button>
+        </div>
+    </body>
 </html>

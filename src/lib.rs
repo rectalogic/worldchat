@@ -5,8 +5,9 @@ use bevy::prelude::*;
 use wasm_bindgen::prelude::*;
 
 use app::AppPlugin;
+pub use irc::UserMessage;
 
 #[wasm_bindgen]
-pub fn start() {
-    App::new().add_plugins(AppPlugin).run();
+pub fn start(user_name: String) {
+    App::new().add_plugins(AppPlugin { user_name }).run();
 }

@@ -3,7 +3,7 @@ use std::{pin::pin, str::FromStr};
 use super::{
     channel::{ChannelOfServer, ChannelPlugin, ChannelUsers},
     message::{IrcControl, IrcEvent},
-    user::UserOfChannel,
+    user::{UserMessage, UserOfChannel},
 };
 use bevy::{
     ecs::relationship::Relationship,
@@ -15,7 +15,7 @@ use futures_util::{
     stream::{self, SplitSink},
 };
 use irc_proto::{
-    Prefix,
+    ChannelExt, Prefix,
     command::{CapSubCommand, Command},
     message::Message as IrcMessage,
     response::Response,
@@ -167,21 +167,34 @@ impl Server {
                                 prefix: Some(Prefix::Nickname(user, ..)),
                                 ..
                             } => {
-                                irc_tx.send(IrcEvent::UserJoined { channel, user }).await?;
+                                irc_tx.send(IrcEvent::Join { channel, user }).await?;
                             }
                             IrcMessage {
                                 command: Command::PART(channel, ..),
                                 prefix: Some(Prefix::Nickname(user, ..)),
                                 ..
                             } => {
-                                irc_tx.send(IrcEvent::UserParted { channel, user }).await?;
+                                irc_tx.send(IrcEvent::Part { channel, user }).await?;
                             }
                             IrcMessage {
                                 command: Command::QUIT(_),
                                 prefix: Some(Prefix::Nickname(user, ..)),
                                 ..
                             } => {
-                                irc_tx.send(IrcEvent::UserQuit { user }).await?;
+                                irc_tx.send(IrcEvent::Quit { user }).await?;
+                            }
+                            IrcMessage {
+                                command: Command::PRIVMSG(channel, message),
+                                prefix: Some(Prefix::Nickname(user, ..)),
+                                ..
+                            } if channel.is_channel_name() => {
+                                irc_tx
+                                    .send(IrcEvent::Message {
+                                        channel,
+                                        user,
+                                        message,
+                                    })
+                                    .await?;
                             }
                             _ => {}
                         }
@@ -192,15 +205,21 @@ impl Server {
                 StreamMessage::WsMessage(Err(e)) => return Err(e.into()),
                 StreamMessage::WsMessage(Ok(ws::Message::Binary(_))) => {}
                 StreamMessage::WsMessage(Ok(ws::Message::Close(_))) => return Ok(()),
-                StreamMessage::IrcControl(control) => match control {
-                    IrcControl::Join { channel } => {
-                        ws_tx.send(&Command::JOIN(channel, None, None)).await?;
+                StreamMessage::IrcControl(control) => {
+                    info!("{control:?}"); //XXX
+                    match control {
+                        IrcControl::Join { channel } => {
+                            info!("ws send JOIN {channel:?}"); //XXX
+                            ws_tx.send(&Command::JOIN(channel, None, None)).await?;
+                        }
+                        IrcControl::Part { channel } => {
+                            ws_tx.send(&Command::PART(channel, None)).await?;
+                        }
+                        IrcControl::Message { channel, message } => {
+                            ws_tx.send(&Command::PRIVMSG(channel, message)).await?;
+                        }
                     }
-                    IrcControl::Part { channel } => {
-                        ws_tx.send(&Command::PART(channel, None)).await?;
-                    }
-                    IrcControl::Message { channel, message } => todo!(),
-                },
+                }
             }
         }
         Ok(())
@@ -215,7 +234,6 @@ fn on_add(add: On<Add, Server>, mut servers: Query<&mut Server>) {
     }
 }
 
-//XXX listen for server events, fire EntityEvents for the corresponding channel
 fn handle_server_events(
     mut commands: Commands,
     servers: Query<(Entity, &Server)>,
@@ -228,7 +246,7 @@ fn handle_server_events(
         if let Some(ref server_task) = server.server_task {
             while let Ok(event) = server_task.rx.try_recv() {
                 match event {
-                    IrcEvent::UserJoined { channel, user } => {
+                    IrcEvent::Join { channel, user } => {
                         let user_name = Name::new(user);
                         if let (Some(channel_entity), None) = find_channel_user(
                             &Name::new(channel),
@@ -242,12 +260,9 @@ fn handle_server_events(
                             commands
                                 .entity(channel_entity)
                                 .with_related::<UserOfChannel>(user_name);
-
-                            //XXX spawn bundle and broadcast our position - trigger channel entity event
-                            // XXX add User marker and app can observe Add and insert UI components and broadcast
                         }
                     }
-                    IrcEvent::UserParted { channel, user } => {
+                    IrcEvent::Part { channel, user } => {
                         if let (_, Some(user_entity)) = find_channel_user(
                             &Name::new(channel),
                             &Name::new(user),
@@ -260,13 +275,40 @@ fn handle_server_events(
                             commands.entity(user_entity).despawn();
                         }
                     }
-                    IrcEvent::UserQuit { user } => {
+                    IrcEvent::Quit { user } => {
                         let user_name = Name::new(user);
                         // Despawn user in all channels
                         users
                             .iter()
                             .filter(|&(_, user)| *user == user_name)
                             .for_each(|(user_entity, _)| commands.entity(user_entity).despawn());
+                    }
+                    IrcEvent::Message {
+                        channel,
+                        user,
+                        message,
+                    } => {
+                        let user_name = Name::new(user);
+                        if let (Some(_), maybe_user) = find_channel_user(
+                            &Name::new(channel),
+                            &user_name,
+                            server_entity,
+                            server_channels,
+                            channels,
+                            channel_users,
+                            users,
+                        ) && let Some(user_entity) = maybe_user.or_else(|| {
+                            if user_name.as_str() == server.user() {
+                                Some(server_entity)
+                            } else {
+                                None
+                            }
+                        }) {
+                            commands.trigger(UserMessage {
+                                user_entity,
+                                message,
+                            });
+                        }
                     }
                 };
             }
