@@ -7,6 +7,9 @@ pub enum IrcControl {
 
 #[derive(Debug)]
 pub enum IrcEvent {
+    Nick {
+        server_user: String,
+    },
     Join {
         channel: String,
         user: String,

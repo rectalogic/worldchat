@@ -5,9 +5,12 @@ use bevy::prelude::*;
 #[relationship(relationship_target = ChannelUsers)]
 pub struct UserOfChannel(Entity);
 
-#[derive(EntityEvent)]
+#[derive(EntityEvent, Debug)]
 pub struct UserMessage {
     #[event_target]
-    pub user_entity: Entity,
+    pub channel_entity: Entity,
+    pub user_entity: Option<Entity>,
+    pub server_entity: Entity,
+    pub user_name: Name,
     pub message: String,
 }

@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use super::{
     message::IrcControl,
     server::{Server, ServerChannels},
@@ -22,6 +20,15 @@ pub struct ChannelOfServer(Entity);
 #[derive(Component, Debug)]
 #[relationship_target(relationship = UserOfChannel, linked_spawn)]
 pub struct ChannelUsers(Vec<Entity>);
+
+#[derive(EntityEvent)]
+pub struct UserJoined {
+    #[event_target]
+    pub channel_entity: Entity,
+    pub channel_name: Name,
+    pub user_name: String,
+    pub server_entity: Entity,
+}
 
 fn on_add(
     add: On<Add, ChannelOfServer>,

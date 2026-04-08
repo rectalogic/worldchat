@@ -3,6 +3,11 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="color-scheme" content="light dark" />
+        <link
+            rel="stylesheet"
+            href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
+        />
         <title>WorldChat</title>
         <style>
             html,
@@ -17,11 +22,11 @@
             import("./restart-audio-context.js");
 
             document.addEventListener("DOMContentLoaded", () => {
-                const button = document.getElementById("start");
+                const button = document.getElementById("joinButton");
                 button.addEventListener("click", () => {
                     const username = document.getElementById("username").value;
                     if (username) {
-                        document.getElementById("startUI").remove();
+                        document.getElementById("loginContainer").remove();
                         start(username);
                     }
                 });
@@ -31,12 +36,22 @@
         </script>
     </head>
     <body>
-        <div id="startUI">
-            <label>
-                Enter username (no spaces)
-                <input id="username" type="text" />
-            </label>
-            <button id="start">Start</button>
-        </div>
+        <main id="loginContainer" class="container">
+            <section>
+                <form>
+                    <div class="grid">
+                        <input
+                            type="text"
+                            name="username"
+                            id="username"
+                            placeholder="User name"
+                            aria-label="User name"
+                            required
+                        />
+                        <button id="joinButton" type="submit">Join</button>
+                    </div>
+                </form>
+            </section>
+        </main>
     </body>
 </html>
