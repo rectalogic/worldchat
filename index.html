@@ -16,20 +16,40 @@
                 height: 100%;
                 margin: 0;
             }
+            .hidden {
+                display: none;
+            }
         </style>
         <script type="module">
-            import init, { start } from "./pkg/worldchat.js";
+            import init, { start, message } from "./pkg/worldchat.js";
             import("./restart-audio-context.js");
 
             document.addEventListener("DOMContentLoaded", () => {
-                const button = document.getElementById("joinButton");
-                button.addEventListener("click", () => {
-                    const username = document.getElementById("username").value;
-                    if (username) {
-                        document.getElementById("loginContainer").remove();
-                        start(username);
-                    }
-                });
+                document
+                    .getElementById("joinButton")
+                    .addEventListener("click", (e) => {
+                        e.preventDefault();
+                        const username =
+                            document.getElementById("username").value;
+                        if (username) {
+                            document.getElementById("loginContainer").remove();
+                            start(username);
+
+                            document
+                                .getElementById("messageButton")
+                                .addEventListener("click", (e) => {
+                                    e.preventDefault();
+                                    const messageText =
+                                        document.getElementById(
+                                            "message",
+                                        ).value;
+                                    message(messageText);
+                                });
+                            document
+                                .getElementById("messageContainer")
+                                .classList.remove("hidden");
+                        }
+                    });
             });
 
             await init();
@@ -39,7 +59,7 @@
         <main id="loginContainer" class="container">
             <section>
                 <form>
-                    <div class="grid">
+                    <fieldset role="group">
                         <input
                             type="text"
                             name="username"
@@ -49,9 +69,24 @@
                             required
                         />
                         <button id="joinButton" type="submit">Join</button>
-                    </div>
+                    </fieldset>
                 </form>
             </section>
         </main>
+        <section id="messageContainer" class="hidden">
+            <form>
+                <fieldset role="group">
+                    <input
+                        type="text"
+                        name="message"
+                        id="message"
+                        placeholder="Message"
+                        aria-label="Message"
+                        required
+                    />
+                    <button id="messageButton" type="submit">Post</button>
+                </fieldset>
+            </form>
+        </section>
     </body>
 </html>

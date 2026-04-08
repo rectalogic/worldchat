@@ -72,12 +72,24 @@ impl Server {
         }
     }
 
+    pub fn server_url(&self) -> &str {
+        &self.server_url
+    }
+
     pub fn user(&self) -> &str {
         &self.user
     }
 
-    pub fn send(&mut self, message: IrcControl) -> Result<(), BevyError> {
+    pub fn irc_tx(&self) -> Option<&async_channel::Sender<IrcControl>> {
         if let Some(ServerTask { ref tx, .. }) = self.server_task {
+            Some(tx)
+        } else {
+            None
+        }
+    }
+
+    pub fn send(&self, message: IrcControl) -> Result<(), BevyError> {
+        if let Some(tx) = self.irc_tx() {
             tx.try_send(message)?;
         }
         Ok(())

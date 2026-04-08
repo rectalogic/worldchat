@@ -5,7 +5,7 @@ mod message;
 mod server;
 mod user;
 
-pub use channel::{ChannelOfServer, UserJoined};
+pub use channel::{ChannelOfServer, UserJoined, send_channel_message};
 pub use message::IrcControl;
 pub use server::Server;
 pub use user::{UserMessage, UserOfChannel};

@@ -16,15 +16,15 @@ impl Plugin for UserPlugin {
 fn on_user_joined(
     joined: On<UserJoined>,
     mut commands: Commands,
-    mut servers: Query<&mut Server>,
+    servers: Query<&Server>,
 ) -> Result<(), BevyError> {
     // Broadcast our position when any user joins
-    if let Ok(mut server) = servers.get_mut(joined.server_entity) {
+    if let Ok(server) = servers.get(joined.server_entity) {
         server.send(IrcControl::Message {
             channel: joined.channel_name.to_string(),
             message: "POSITION".into(), // XXX encode our (server/main user) position
         })?;
-        // Update our name
+        // Update our name, it may have changed on join due to duplicate nick
         if server.user() == joined.user_name {
             commands.entity(joined.server_entity).insert((
                 Text2d::new(joined.user_name.as_str()),
