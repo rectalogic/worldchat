@@ -7,12 +7,15 @@ pub enum IrcControl {
 
 #[derive(Debug)]
 pub enum IrcEvent {
-    Nick {
-        server_user: String,
+    ChangeName {
+        previous_name: String,
+        name: String,
     },
-    Join {
+    AddUser {
         channel: String,
         user: String,
+        primary: bool,
+        joined: bool,
     },
     Part {
         channel: String,

@@ -5,10 +5,10 @@ mod message;
 mod server;
 mod user;
 
-pub use channel::{ChannelOfServer, UserJoined, send_channel_message};
+pub use channel::{ChannelOfServer, ChannelUsers, UserAdded, send_channel_message};
 pub use message::IrcControl;
-pub use server::Server;
-pub use user::{UserMessage, UserOfChannel};
+pub use server::{Server, ServerChannels, UserNameChanged};
+pub use user::{PrimaryUser, UserMessage, UserOfChannel};
 
 pub struct IrcPlugin;
 

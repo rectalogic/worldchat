@@ -24,12 +24,14 @@ pub struct ChannelOfServer(Entity);
 pub struct ChannelUsers(Vec<Entity>);
 
 #[derive(EntityEvent)]
-pub struct UserJoined {
+pub struct UserAdded {
+    pub server_entity: Entity,
     #[event_target]
     pub channel_entity: Entity,
     pub channel_name: Name,
-    pub user_name: String,
-    pub server_entity: Entity,
+    pub user_name: Name,
+    pub joined: bool,
+    pub primary: bool,
 }
 
 thread_local! {

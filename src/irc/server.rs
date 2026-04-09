@@ -1,7 +1,7 @@
 use std::{pin::pin, str::FromStr};
 
 use super::{
-    channel::{ChannelOfServer, ChannelPlugin, ChannelUsers, UserJoined},
+    channel::{ChannelOfServer, ChannelPlugin, ChannelUsers, UserAdded},
     message::{IrcControl, IrcEvent},
     user::{UserMessage, UserOfChannel},
 };
@@ -54,6 +54,14 @@ struct ServerTask {
     tx: async_channel::Sender<IrcControl>,
     rx: async_channel::Receiver<IrcEvent>,
     _task: Task<()>,
+}
+
+#[derive(EntityEvent, Debug)]
+pub struct UserNameChanged {
+    #[event_target]
+    pub server_entity: Entity,
+    pub previous_name: Name,
+    pub name: Name,
 }
 
 #[derive(Component, Debug)]
@@ -133,9 +141,9 @@ impl Server {
             ))
             .await?;
 
-        //XXX need to handle nick denial (in use)
         ws_tx.send(&Command::NICK(server_user.clone())).await?;
 
+        let mut current_server_user = server_user.clone();
         let mut server_user = server_user;
 
         while let Some(response) = ws_rx.next().await {
@@ -148,8 +156,10 @@ impl Server {
                         ws_tx.send(&Command::PONG(server1, server2)).await?;
                     }
                     Command::Response(Response::ERR_NICKNAMEINUSE, _) => {
-                        server_user.push('_');
-                        ws_tx.send(&Command::NICK(server_user.clone())).await?;
+                        current_server_user.push('_');
+                        ws_tx
+                            .send(&Command::NICK(current_server_user.clone()))
+                            .await?;
                     }
                     Command::Response(Response::RPL_ENDOFMOTD, _)
                     | Command::Response(Response::ERR_NOMOTD, _) => {
@@ -160,7 +170,15 @@ impl Server {
             }
         }
 
-        irc_tx.send(IrcEvent::Nick { server_user }).await?;
+        if server_user != current_server_user {
+            irc_tx
+                .send(IrcEvent::ChangeName {
+                    previous_name: server_user.clone(),
+                    name: current_server_user.clone(),
+                })
+                .await?;
+            server_user = current_server_user;
+        }
 
         let events = stream::select(
             ws_rx.map(StreamMessage::WsMessage),
@@ -182,11 +200,34 @@ impl Server {
                                 ws_tx.send(&Command::PONG(server1, server2)).await?;
                             }
                             IrcMessage {
+                                command: Command::Response(Response::RPL_NAMREPLY, ref args),
+                                ..
+                            } if args.len() == 4 => {
+                                let channel = &args[2];
+                                for user in args[3].split(' ') {
+                                    irc_tx
+                                        .send(IrcEvent::AddUser {
+                                            channel: channel.clone(),
+                                            primary: user == server_user,
+                                            joined: false,
+                                            user: user.into(),
+                                        })
+                                        .await?;
+                                }
+                            }
+                            IrcMessage {
                                 command: Command::JOIN(channel, ..),
                                 prefix: Some(Prefix::Nickname(user, ..)),
                                 ..
                             } => {
-                                irc_tx.send(IrcEvent::Join { channel, user }).await?;
+                                irc_tx
+                                    .send(IrcEvent::AddUser {
+                                        channel,
+                                        primary: user == server_user,
+                                        joined: true,
+                                        user,
+                                    })
+                                    .await?;
                             }
                             IrcMessage {
                                 command: Command::PART(channel, ..),
@@ -201,6 +242,18 @@ impl Server {
                                 ..
                             } => {
                                 irc_tx.send(IrcEvent::Quit { user }).await?;
+                            }
+                            IrcMessage {
+                                command: Command::NICK(name),
+                                prefix: Some(Prefix::Nickname(previous_name, ..)),
+                                ..
+                            } => {
+                                irc_tx
+                                    .send(IrcEvent::ChangeName {
+                                        previous_name,
+                                        name,
+                                    })
+                                    .await?;
                             }
                             IrcMessage {
                                 command: Command::PRIVMSG(channel, message),
@@ -264,17 +317,31 @@ fn handle_server_events(
         if let Some(ref server_task) = server.server_task {
             while let Ok(event) = server_task.rx.try_recv() {
                 match event {
-                    IrcEvent::Nick { server_user } => {
-                        if server_user != server.user() {
+                    IrcEvent::ChangeName {
+                        previous_name,
+                        name,
+                    } => {
+                        if previous_name == server.user() {
+                            let name = name.clone();
                             commands.queue(move |world: &mut World| {
                                 let mut server_entity_mut = world.entity_mut(server_entity);
                                 if let Some(mut server) = server_entity_mut.get_mut::<Server>() {
-                                    server.user = server_user;
+                                    server.user = name;
                                 }
                             });
                         }
+                        commands.trigger(UserNameChanged {
+                            server_entity,
+                            previous_name: Name::new(previous_name),
+                            name: Name::new(name),
+                        });
                     }
-                    IrcEvent::Join { channel, user } => {
+                    IrcEvent::AddUser {
+                        channel,
+                        user,
+                        primary,
+                        joined,
+                    } => {
                         let channel_name = Name::new(channel);
                         if let Some(channel_entity) = find_relationship_source_named(
                             &channel_name,
@@ -282,11 +349,13 @@ fn handle_server_events(
                             server_channels,
                             channels,
                         ) {
-                            commands.trigger(UserJoined {
+                            commands.trigger(UserAdded {
+                                server_entity,
                                 channel_entity,
                                 channel_name,
-                                user_name: user,
-                                server_entity,
+                                user_name: Name::new(user),
+                                primary,
+                                joined,
                             });
                         }
                     }
@@ -317,7 +386,7 @@ fn handle_server_events(
                         message,
                     } => {
                         let user_name = Name::new(user);
-                        if let (Some(channel_entity), maybe_user) = find_channel_user(
+                        if let (Some(_), Some(user_entity)) = find_channel_user(
                             &Name::new(channel),
                             &user_name,
                             server_entity,
@@ -326,18 +395,8 @@ fn handle_server_events(
                             channel_users,
                             users,
                         ) {
-                            let user_entity = maybe_user.or_else(|| {
-                                if user_name.as_str() == server.user() {
-                                    Some(server_entity)
-                                } else {
-                                    None
-                                }
-                            });
                             commands.trigger(UserMessage {
-                                channel_entity,
                                 user_entity,
-                                server_entity,
-                                user_name,
                                 message,
                             });
                         }
