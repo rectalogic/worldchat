@@ -2,11 +2,11 @@ use std::{pin::pin, str::FromStr};
 
 use super::{
     channel::{ChannelOfServer, ChannelPlugin, ChannelUsers, UserAdded},
+    find_relationship_source_named,
     message::{IrcControl, IrcEvent},
     user::{UserMessage, UserOfChannel},
 };
 use bevy::{
-    ecs::relationship::Relationship,
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
@@ -84,10 +84,6 @@ impl Server {
         &self.server_url
     }
 
-    pub fn user(&self) -> &str {
-        &self.user
-    }
-
     pub fn irc_tx(&self) -> Option<&async_channel::Sender<IrcControl>> {
         if let Some(ServerTask { ref tx, .. }) = self.server_task {
             Some(tx)
@@ -143,7 +139,6 @@ impl Server {
 
         ws_tx.send(&Command::NICK(server_user.clone())).await?;
 
-        let mut current_server_user = server_user.clone();
         let mut server_user = server_user;
 
         while let Some(response) = ws_rx.next().await {
@@ -156,10 +151,8 @@ impl Server {
                         ws_tx.send(&Command::PONG(server1, server2)).await?;
                     }
                     Command::Response(Response::ERR_NICKNAMEINUSE, _) => {
-                        current_server_user.push('_');
-                        ws_tx
-                            .send(&Command::NICK(current_server_user.clone()))
-                            .await?;
+                        server_user.push('_');
+                        ws_tx.send(&Command::NICK(server_user.clone())).await?;
                     }
                     Command::Response(Response::RPL_ENDOFMOTD, _)
                     | Command::Response(Response::ERR_NOMOTD, _) => {
@@ -168,16 +161,6 @@ impl Server {
                     _ => {}
                 }
             }
-        }
-
-        if server_user != current_server_user {
-            irc_tx
-                .send(IrcEvent::ChangeName {
-                    previous_name: server_user.clone(),
-                    name: current_server_user.clone(),
-                })
-                .await?;
-            server_user = current_server_user;
         }
 
         let events = stream::select(
@@ -321,15 +304,6 @@ fn handle_server_events(
                         previous_name,
                         name,
                     } => {
-                        if previous_name == server.user() {
-                            let name = name.clone();
-                            commands.queue(move |world: &mut World| {
-                                let mut server_entity_mut = world.entity_mut(server_entity);
-                                if let Some(mut server) = server_entity_mut.get_mut::<Server>() {
-                                    server.user = name;
-                                }
-                            });
-                        }
                         commands.trigger(UserNameChanged {
                             server_entity,
                             previous_name: Name::new(previous_name),
@@ -405,17 +379,6 @@ fn handle_server_events(
             }
         }
     }
-}
-
-fn find_relationship_source_named<RS: Relationship, RT: RelationshipTarget>(
-    source_name: &Name,
-    target_entity: Entity,
-    targets: Query<&RT>,
-    sources: Query<(Entity, &Name), With<RS>>,
-) -> Option<Entity> {
-    targets.relationship_sources::<RT>(target_entity).find(
-        |source_entity| matches!(sources.get(*source_entity), Ok((_, name)) if name == source_name),
-    )
 }
 
 fn find_channel_user(

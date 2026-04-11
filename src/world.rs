@@ -2,6 +2,8 @@ use bevy::prelude::*;
 
 mod user;
 
+pub use user::WorldPosition;
+
 pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
