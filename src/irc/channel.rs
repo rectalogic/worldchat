@@ -5,7 +5,7 @@ use super::{
     server::{Server, ServerChannels},
     user::UserOfChannel,
 };
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::prelude::*;
 
 pub struct ChannelPlugin;
 
@@ -22,6 +22,9 @@ pub struct ChannelOfServer(Entity);
 #[derive(Component, Debug)]
 #[relationship_target(relationship = UserOfChannel, linked_spawn)]
 pub struct ChannelUsers(Vec<Entity>);
+
+#[derive(Component, Debug)]
+pub struct ActiveChannel;
 
 #[derive(EntityEvent)]
 pub struct UserAdded {

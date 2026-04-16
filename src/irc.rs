@@ -5,7 +5,7 @@ mod message;
 mod server;
 mod user;
 
-pub use channel::{ChannelOfServer, ChannelUsers, UserAdded};
+pub use channel::{ActiveChannel, ChannelOfServer, ChannelUsers, UserAdded};
 pub use message::IrcControl;
 pub use server::{Server, ServerChannels, UserNameChanged};
 pub use user::{PrimaryUser, UserMessage, UserOfChannel};
