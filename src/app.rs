@@ -2,8 +2,7 @@ use std::{cell::RefCell, sync::LazyLock};
 
 use crate::{
     irc::{
-        ActiveChannel, ChannelOfServer, ChannelUsers, IrcControl, IrcPlugin, PrimaryUser, Server,
-        ServerChannels, UserOfChannel, find_relationship_source_named,
+        ActiveChannel, ChannelOfServer, IrcControl, IrcPlugin, PrimaryUser, Server, UserOfChannel,
     },
     world::{WorldPlugin, WorldPosition},
 };
@@ -71,9 +70,16 @@ fn poll_external_messages(
     if let Ok(message) = receiver.try_recv()
         && let (active_channel_entity, channel_of_server, active_channel_name) = *active_channel
         && let Ok(server) = servers.get(channel_of_server.get())
-        && let Some((_, user_transform)) = primary_users
-            .iter()
-            .find(|&(user_of_channel, _)| user_of_channel.get() == active_channel_entity)
+        && let Some(user_transform) =
+            primary_users
+                .iter()
+                .find_map(|(user_of_channel, transform)| {
+                    if user_of_channel.get() == active_channel_entity {
+                        Some(transform)
+                    } else {
+                        None
+                    }
+                })
     {
         server.send(IrcControl::Message {
             channel: active_channel_name.to_string(),

@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use super::{
     message::IrcControl,
     server::{Server, ServerChannels},
