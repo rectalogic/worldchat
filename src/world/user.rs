@@ -120,7 +120,7 @@ fn on_message(
                 .entity(user_message.user_entity)
                 .insert((Name::new(new_name.clone()), Text2d::new(new_name)));
         }
-    };
+    }
     // XXX add visual message component displaying last message
     Ok(())
 }

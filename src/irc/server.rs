@@ -10,7 +10,7 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use futures_util::{
-    SinkExt, StreamExt,
+    SinkExt, Stream, StreamExt,
     stream::{self, SplitSink},
 };
 use irc_proto::{
@@ -137,12 +137,26 @@ impl IrcServer {
             })
             .await?;
 
-        let mut nick_prefixes = None;
-
         let events = stream::select(
             ws_rx.map(StreamMessage::WsMessage),
             bevy_rx.map(StreamMessage::IrcControl),
         );
+        Self::event_loop(events, server_nick, channel, ws_tx, irc_tx).await
+    }
+
+    #[expect(clippy::too_many_lines)]
+    async fn event_loop<S>(
+        events: S,
+        server_nick: String,
+        channel: String,
+        mut ws_tx: WsSender,
+        irc_tx: async_channel::Sender<IrcEvent>,
+    ) -> Result<()>
+    where
+        S: Stream<Item = StreamMessage>,
+    {
+        let mut nick_prefixes = None;
+
         let mut events = pin!(events);
         while let Some(response) = events.as_mut().next().await {
             match response {
@@ -180,7 +194,7 @@ impl IrcServer {
                                         && prefixes.contains(prefix)
                                     {
                                         nick = nick.split_at(1).1;
-                                    };
+                                    }
                                     if nick != server_nick {
                                         irc_tx
                                             .send(IrcEvent::AddUser { nick: nick.into() })
@@ -296,6 +310,6 @@ fn handle_server_events(mut commands: Commands, mut server: ResMut<IrcServer>) {
                     });
                 }
             }
-        };
+        }
     }
 }
