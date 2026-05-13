@@ -4,4 +4,4 @@ mod user;
 
 pub use message::IrcControlMessage;
 pub use server::{IrcServer, IrcServerPlugin};
-pub use user::{PrimaryUser, UserJoined, UserMessage};
+pub use user::{PrimaryUser, User, UserJoined, UserMessage};

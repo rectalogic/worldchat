@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use wasm_bindgen::prelude::*;
 
 use app::{AppPlugin, send_message};
-pub use irc::UserMessage;
+pub use irc::{User, UserMessage};
 
 #[wasm_bindgen]
 pub fn start(user_name: String) {

@@ -2,7 +2,7 @@ use std::{pin::pin, str::FromStr};
 
 use super::{
     message::{IrcControlMessage, IrcEvent},
-    user::{PrimaryUser, UserJoined, UserMessage},
+    user::{PrimaryUser, User, UserJoined, UserMessage},
 };
 use bevy::{
     platform::collections::HashMap,
@@ -137,6 +137,8 @@ impl IrcServer {
             })
             .await?;
 
+        let mut nick_prefixes = None;
+
         let events = stream::select(
             ws_rx.map(StreamMessage::WsMessage),
             bevy_rx.map(StreamMessage::IrcControl),
@@ -157,11 +159,41 @@ impl IrcServer {
                                 ws_tx.send(&Command::PONG(server1, server2)).await?;
                             }
                             IrcMessage {
-                                command: Command::JOIN(..),
-                                prefix: Some(Prefix::Nickname(..)),
+                                command: Command::Response(Response::RPL_ISUPPORT, ref args),
                                 ..
                             } => {
-                                irc_tx.send(IrcEvent::UserJoined).await?;
+                                if let Some(prefix) =
+                                    args.iter().find(|&a| a.starts_with("PREFIX="))
+                                    // Looks like "PREFIX=(qaohv)~&@%6+"
+                                    && let Some((_, prefixes)) = prefix.split_once(')')
+                                {
+                                    nick_prefixes = Some(prefixes.to_string());
+                                }
+                            }
+                            IrcMessage {
+                                command: Command::Response(Response::RPL_NAMREPLY, ref args),
+                                ..
+                            } if args.len() == 4 => {
+                                for mut nick in args[3].split(' ') {
+                                    if let Some(ref prefixes) = nick_prefixes
+                                        && let Some(prefix) = nick.chars().next()
+                                        && prefixes.contains(prefix)
+                                    {
+                                        nick = nick.split_at(1).1;
+                                    };
+                                    if nick != server_nick {
+                                        irc_tx
+                                            .send(IrcEvent::AddUser { nick: nick.into() })
+                                            .await?;
+                                    }
+                                }
+                            }
+                            IrcMessage {
+                                command: Command::JOIN(..),
+                                prefix: Some(Prefix::Nickname(nick, ..)),
+                                ..
+                            } => {
+                                irc_tx.send(IrcEvent::UserJoined { nick }).await?;
                             }
                             IrcMessage {
                                 command: Command::PART(..),
@@ -231,6 +263,10 @@ fn handle_server_events(mut commands: Commands, mut server: ResMut<IrcServer>) {
                 let entity = commands.spawn((PrimaryUser, Name::new(name))).id();
                 server.users.insert(nick, entity);
             }
+            IrcEvent::AddUser { nick } => {
+                let entity = commands.spawn(User).id();
+                server.users.insert(nick, entity);
+            }
             IrcEvent::ChangeName {
                 previous_nick,
                 nick,
@@ -239,12 +275,17 @@ fn handle_server_events(mut commands: Commands, mut server: ResMut<IrcServer>) {
                     server.users.insert(nick, entity);
                 }
             }
-            IrcEvent::UserJoined => {
+            IrcEvent::UserJoined { nick } => {
+                if !server.users.contains_key(&nick) {
+                    let entity = commands.spawn(User).id();
+                    server.users.insert(nick, entity);
+                }
                 commands.trigger(UserJoined);
             }
             IrcEvent::Part { nick } | IrcEvent::Quit { nick } => {
                 if let Some(&user_entity) = server.users.get(&nick) {
                     commands.entity(user_entity).despawn();
+                    server.users.remove(&nick);
                 }
             }
             IrcEvent::Message { nick, message } => {

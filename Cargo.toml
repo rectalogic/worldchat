@@ -2,7 +2,12 @@
 name = "worldchat"
 version = "0.1.0"
 authors = ["Andrew Wason <rectalogic@rectalogic.com>"]
+repository = "https://github.com/rectalogic/worldchat"
 edition = "2024"
+description = "Chat in a 2D world via IRC"
+license = "MIT OR Apache-2.0"
+categories = ["game", "graphics", "irc", "chat"]
+keywords = ["game", "bevy", "irc", "chat"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]

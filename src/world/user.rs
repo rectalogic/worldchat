@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    UserMessage,
+    User, UserMessage,
     irc::{IrcControlMessage, IrcServer, PrimaryUser, UserJoined},
 };
 
@@ -57,11 +57,14 @@ impl TryFrom<&str> for UserInfo {
 fn on_primary_user_added(
     added: On<Add, PrimaryUser>,
     mut commands: Commands,
-    primary_user: Single<(Entity, &Name), With<PrimaryUser>>,
+    users: Query<&Name, With<User>>,
 ) {
-    let (entity, name) = *primary_user;
-    //XXX modify initial transform so user not always at 0,0
-    commands.entity(entity).insert(Text2d::new(name.as_str()));
+    if let Ok(name) = users.get(added.entity) {
+        //XXX modify initial transform so user not always at 0,0
+        commands
+            .entity(added.entity)
+            .insert(Text2d::new(name.as_str()));
+    }
 }
 
 #[expect(clippy::needless_pass_by_value)]
@@ -71,7 +74,6 @@ fn on_user_joined(
     server: Res<IrcServer>,
 ) -> Result<()> {
     let (name, transform) = *primary_user;
-
     // Broadcast our position and name in channel when any other user joins
     server.send(IrcControlMessage::Message {
         message: UserInfo {
@@ -83,8 +85,42 @@ fn on_user_joined(
     Ok(())
 }
 
-fn on_message(message: On<UserMessage>, mut commands: Commands) {
-    // XXX decode position from message and set Transform on message.user_entity
+type UsersQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut Transform,
+        Option<&'static Name>,
+        Option<&'static PrimaryUser>,
+    ),
+    With<User>,
+>;
 
+#[expect(clippy::needless_pass_by_value)]
+fn on_message(
+    user_message: On<UserMessage>,
+    mut commands: Commands,
+    mut users: UsersQuery,
+) -> Result<()> {
+    let (info, message) = match user_message.message.split_once(' ') {
+        None => (UserInfo::try_from(user_message.message.as_str())?, None),
+        Some((info, message)) => (UserInfo::try_from(info)?, Some(message)),
+    };
+    // Don't modify primary user
+    if let Ok((mut transform, name, primary)) = users.get_mut(user_message.user_entity)
+        && primary.is_none()
+    {
+        //XXX should animate lerp to new position (and queue up position changes)
+        transform.translation.x = info.position.x;
+        transform.translation.y = info.position.y;
+        if let Some(new_name) = info.name
+            && name.is_none()
+        {
+            commands
+                .entity(user_message.user_entity)
+                .insert((Name::new(new_name.clone()), Text2d::new(new_name)));
+        }
+    };
     // XXX add visual message component displaying last message
+    Ok(())
 }
