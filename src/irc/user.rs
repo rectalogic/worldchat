@@ -1,12 +1,12 @@
-use super::channel::ChannelUsers;
 use bevy::prelude::*;
 
-#[derive(Component, Debug)]
+#[derive(Component, Default, Debug)]
+#[require(User)]
 pub struct PrimaryUser;
 
-#[derive(Component, Debug)]
-#[relationship(relationship_target = ChannelUsers)]
-pub struct UserOfChannel(Entity);
+#[derive(Component, Default, Debug)]
+#[require(Transform)]
+pub struct User;
 
 #[derive(EntityEvent, Debug)]
 pub struct UserMessage {
@@ -14,3 +14,6 @@ pub struct UserMessage {
     pub user_entity: Entity,
     pub message: String,
 }
+
+#[derive(Event)]
+pub struct UserJoined;

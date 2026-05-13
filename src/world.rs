@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 mod user;
 
-pub use user::WorldPosition;
+pub use user::{UserInfo, UserPosition};
 
 pub struct WorldPlugin;
 
