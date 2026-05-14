@@ -106,6 +106,7 @@ fn on_message(
         None => (UserInfo::try_from(user_message.message.as_str())?, None),
         Some((info, message)) => (UserInfo::try_from(info)?, Some(message)),
     };
+
     // Don't modify primary user
     if let Ok((mut transform, name, primary)) = users.get_mut(user_message.user_entity)
         && primary.is_none()
@@ -121,6 +122,10 @@ fn on_message(
                 .insert((Name::new(new_name.clone()), Text2d::new(new_name)));
         }
     }
-    // XXX add visual message component displaying last message
+
+    if let Some(message) = message {
+        // XXX add visual message component displaying last message
+    }
+
     Ok(())
 }

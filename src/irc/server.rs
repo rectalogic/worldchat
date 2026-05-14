@@ -147,7 +147,7 @@ impl IrcServer {
     #[expect(clippy::too_many_lines)]
     async fn event_loop<S>(
         events: S,
-        server_nick: String,
+        mut server_nick: String,
         channel: String,
         mut ws_tx: WsSender,
         irc_tx: async_channel::Sender<IrcEvent>,
@@ -228,6 +228,9 @@ impl IrcServer {
                                 prefix: Some(Prefix::Nickname(previous_nick, ..)),
                                 ..
                             } => {
+                                if previous_nick == server_nick {
+                                    server_nick = nick.clone();
+                                }
                                 irc_tx
                                     .send(IrcEvent::ChangeName {
                                         previous_nick,

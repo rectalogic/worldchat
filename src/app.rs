@@ -26,6 +26,7 @@ impl Plugin for AppPlugin {
             },
             WorldPlugin,
         ))
+        .set_error_handler(bevy::ecs::error::error)
         .insert_resource(ExternalMessageReceiver(
             EXTERNAL_MESSAGE_CHANNELS.with_borrow(|(_, rx)| rx.clone()),
         ))
