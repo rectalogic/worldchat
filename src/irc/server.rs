@@ -1,7 +1,7 @@
 use std::{pin::pin, str::FromStr};
 
 use super::{
-    message::{IrcControlMessage, IrcEvent},
+    message::IrcControlMessage,
     user::{PrimaryUser, User, UserJoined, UserMessage},
 };
 use bevy::{
@@ -44,6 +44,17 @@ impl WsSender {
     async fn send(&mut self, command: &Command) -> ws::error::Result<()> {
         self.0.send(ws::Message::text(String::from(command))).await
     }
+}
+
+#[derive(Debug)]
+enum IrcEvent {
+    PrimaryUser { nick: String, name: String },
+    AddUser { nick: String },
+    ChangeName { previous_nick: String, nick: String },
+    UserJoined { nick: String },
+    Part { nick: String },
+    Quit { nick: String },
+    Message { nick: String, message: String },
 }
 
 enum StreamMessage {
