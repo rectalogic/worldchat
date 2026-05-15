@@ -1,5 +1,7 @@
 use std::{pin::pin, str::FromStr};
 
+use crate::{app::AppState, irc::user::PrimaryUserNameSet};
+
 use super::{
     message::IrcControlMessage,
     user::{PrimaryUser, User, UserJoined, UserMessage},
@@ -21,21 +23,32 @@ use irc_proto::{
 };
 use tokio_tungstenite_wasm as ws;
 
-pub struct IrcServerPlugin {
-    pub server_url: String,
-    pub channel: String,
-    pub user: String,
-}
+const IRC_SERVER_URL: &str = "wss://fiery.swiftirc.net:4443";
+const IRC_CHANNEL: &str = "#bevyworldchat";
+
+pub struct IrcServerPlugin;
 
 impl Plugin for IrcServerPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(IrcServer::new(
-            self.server_url.clone(),
-            self.channel.clone(),
-            self.user.clone(),
-        ))
-        .add_systems(Update, handle_server_events);
+        app.add_observer(on_username_set)
+            .add_systems(OnExit(AppState::Chat), teardown)
+            .add_systems(
+                Update,
+                handle_server_events.run_if(in_state(AppState::Chat)),
+            );
     }
+}
+
+#[expect(clippy::needless_pass_by_value)]
+fn on_username_set(username: On<PrimaryUserNameSet>, mut commands: Commands) {
+    commands.insert_resource(IrcServer::new(username.0.clone()));
+}
+
+fn teardown(mut commands: Commands, users: Query<Entity, With<User>>) {
+    for user in users {
+        commands.entity(user).despawn();
+    }
+    commands.remove_resource::<IrcServer>();
 }
 
 struct WsSender(SplitSink<ws::WebSocketStream, ws::Message>);
@@ -72,14 +85,14 @@ pub struct IrcServer {
 }
 
 impl IrcServer {
-    pub fn new(server_url: String, channel: String, user: String) -> Self {
+    pub fn new(user_name: String) -> Self {
         let (bevy_tx, bevy_rx) = async_channel::unbounded();
         let (irc_tx, irc_rx) = async_channel::unbounded();
         Self {
             tx: bevy_tx,
             rx: irc_rx,
             _task: IoTaskPool::get().spawn(async move {
-                if let Err(e) = Self::serve(server_url, user, channel, bevy_rx, irc_tx).await {
+                if let Err(e) = Self::serve(user_name, bevy_rx, irc_tx).await {
                     error!("Failed to connect to IRC server: {e:?}");
                     //XXX handle ws errors, just alert user?
                 }
@@ -94,15 +107,16 @@ impl IrcServer {
     }
 
     async fn serve(
-        server_url: String,
-        user: String,
-        channel: String,
+        user_name: String,
         bevy_rx: async_channel::Receiver<IrcControlMessage>,
         irc_tx: async_channel::Sender<IrcEvent>,
     ) -> Result<(), BevyError> {
-        let stream = ws::connect_with_protocols(&server_url, &["text.ircv3.net"]).await?;
+        let stream = ws::connect_with_protocols(IRC_SERVER_URL, &["text.ircv3.net"]).await?;
         let (ws_tx, mut ws_rx) = stream.split();
         let mut ws_tx = WsSender(ws_tx);
+
+        let mut server_nick = user_name.clone();
+        server_nick.retain(|c| !c.is_alphanumeric());
 
         // Send a CAP END to signify that we're IRCv3-compliant (and to end negotiations!).
         ws_tx
@@ -110,12 +124,14 @@ impl IrcServer {
             .await?;
 
         ws_tx
-            .send(&Command::USER(user.clone(), "0".into(), user.clone()))
+            .send(&Command::USER(
+                server_nick.clone(),
+                "0".into(),
+                server_nick.clone(),
+            ))
             .await?;
 
-        ws_tx.send(&Command::NICK(user.clone())).await?;
-
-        let mut server_nick = user.clone();
+        ws_tx.send(&Command::NICK(server_nick.clone())).await?;
 
         while let Some(response) = ws_rx.next().await {
             if let Ok(ws::Message::Text(bytes)) = response
@@ -132,7 +148,7 @@ impl IrcServer {
                     }
                     Command::Response(Response::RPL_WELCOME, _) => {
                         ws_tx
-                            .send(&Command::JOIN(channel.clone(), None, None))
+                            .send(&Command::JOIN(IRC_CHANNEL.to_string(), None, None))
                             .await?;
                         break;
                     }
@@ -144,7 +160,7 @@ impl IrcServer {
         irc_tx
             .send(IrcEvent::PrimaryUser {
                 nick: server_nick.clone(),
-                name: user,
+                name: user_name,
             })
             .await?;
 
@@ -152,14 +168,13 @@ impl IrcServer {
             ws_rx.map(StreamMessage::WsMessage),
             bevy_rx.map(StreamMessage::IrcControl),
         );
-        Self::event_loop(events, server_nick, channel, ws_tx, irc_tx).await
+        Self::event_loop(events, server_nick, ws_tx, irc_tx).await
     }
 
     #[expect(clippy::too_many_lines)]
     async fn event_loop<S>(
         events: S,
         mut server_nick: String,
-        channel: String,
         mut ws_tx: WsSender,
         irc_tx: async_channel::Sender<IrcEvent>,
     ) -> Result<()>
@@ -269,11 +284,13 @@ impl IrcServer {
                     info!("{control:?}"); //XXX
                     match control {
                         IrcControlMessage::Part => {
-                            ws_tx.send(&Command::PART(channel.clone(), None)).await?;
+                            ws_tx
+                                .send(&Command::PART(IRC_CHANNEL.to_string(), None))
+                                .await?;
                         }
                         IrcControlMessage::Message { message } => {
                             ws_tx
-                                .send(&Command::PRIVMSG(channel.clone(), message))
+                                .send(&Command::PRIVMSG(IRC_CHANNEL.to_string(), message))
                                 .await?;
                         }
                     }

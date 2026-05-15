@@ -17,3 +17,6 @@ pub struct UserMessage {
 
 #[derive(Event)]
 pub struct UserJoined;
+
+#[derive(Event)]
+pub struct PrimaryUserNameSet(pub String);

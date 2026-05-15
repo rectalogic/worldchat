@@ -8,8 +8,8 @@ use app::{AppPlugin, send_message};
 pub use irc::{User, UserMessage};
 
 #[wasm_bindgen]
-pub fn start(user_name: String) {
-    App::new().add_plugins(AppPlugin { user_name }).run();
+pub fn start() {
+    App::new().add_plugins(AppPlugin).run();
 }
 
 #[wasm_bindgen]

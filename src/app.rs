@@ -6,32 +6,29 @@ use crate::{
 };
 use bevy::prelude::*;
 
-pub struct AppPlugin {
-    pub user_name: String,
-}
+pub struct AppPlugin;
 
 #[derive(Resource, Deref)]
 struct ExternalMessageReceiver(async_channel::Receiver<ExternalMessage>);
 
 impl Plugin for AppPlugin {
     fn build(&self, app: &mut App) {
-        let mut user_name = self.user_name.clone();
-        user_name.retain(|c| !c.is_whitespace());
-        app.add_plugins((
-            DefaultPlugins,
-            IrcServerPlugin {
-                server_url: "wss://fiery.swiftirc.net:4443".to_string(),
-                channel: "#bevyworldchat".to_string(),
-                user: user_name,
-            },
-            WorldPlugin,
-        ))
-        .set_error_handler(bevy::ecs::error::error)
-        .insert_resource(ExternalMessageReceiver(
-            EXTERNAL_MESSAGE_CHANNELS.with_borrow(|(_, rx)| rx.clone()),
-        ))
-        .add_systems(Update, poll_external_messages);
+        app.add_plugins((DefaultPlugins, IrcServerPlugin, WorldPlugin))
+            .init_state::<AppState>()
+            .set_error_handler(bevy::ecs::error::error)
+            .insert_resource(ExternalMessageReceiver(
+                EXTERNAL_MESSAGE_CHANNELS.with_borrow(|(_, rx)| rx.clone()),
+            ))
+            .add_systems(Update, poll_external_messages);
     }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, States)]
+pub enum AppState {
+    #[default]
+    Login,
+    Chat,
+    Error,
 }
 
 #[derive(Default)]
