@@ -4,33 +4,36 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     User, UserMessage,
+    app::AppState,
     irc::{IrcControlMessage, IrcServer, PrimaryUser, UserJoined},
+    world::form,
 };
 
-pub struct UserPlugin;
+pub struct ChatPlugin;
 
-impl Plugin for UserPlugin {
+impl Plugin for ChatPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(on_primary_user_added)
             .add_observer(on_user_joined)
-            .add_observer(on_message);
+            .add_observer(on_message)
+            .add_systems(OnEnter(AppState::Chat), scene.spawn());
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct UserPosition {
-    pub x: f32,
-    pub y: f32,
+struct UserPosition {
+    x: f32,
+    y: f32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct UserInfo {
-    pub name: Option<String>,
-    pub position: UserPosition,
+struct UserInfo {
+    name: Option<String>,
+    position: UserPosition,
 }
 
 impl UserInfo {
-    pub fn base64(&self) -> Result<String> {
+    fn base64(&self) -> Result<String> {
         Ok(STANDARD_NO_PAD.encode(postcard::to_allocvec(self)?))
     }
 }
@@ -51,6 +54,47 @@ impl TryFrom<&str> for UserInfo {
         let bytes = STANDARD_NO_PAD.decode(value)?;
         Ok(postcard::from_bytes::<UserInfo>(&bytes)?)
     }
+}
+
+fn scene() -> impl Scene {
+    bsn! {
+        Node {
+            width: percent(100),
+            height: percent(100),
+            align_items: AlignItems::FlexEnd,
+            justify_content: JustifyContent::Center,
+        }
+        Children [
+            Node {
+                width: percent(90),
+            }
+            Children [
+                form::ui("Message")
+                on(submit_message)
+            ]
+        ]
+    }
+}
+
+#[expect(clippy::needless_pass_by_value)]
+fn submit_message(
+    event: On<form::SubmitTextEvent>,
+    server: Res<IrcServer>,
+    primary_user: Single<(&Name, &Transform), With<PrimaryUser>>,
+) -> Result<()> {
+    let (name, transform) = *primary_user;
+    server.send(IrcControlMessage::Message {
+        message: format!(
+            "{} {}",
+            UserInfo {
+                name: Some(name.to_string()),
+                position: UserPosition::from(transform),
+            }
+            .base64()?,
+            event.value.clone()
+        ),
+    })?;
+    Ok(())
 }
 
 #[expect(clippy::needless_pass_by_value)]

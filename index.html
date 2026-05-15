@@ -4,10 +4,6 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta name="color-scheme" content="light dark" />
-        <link
-            rel="stylesheet"
-            href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
-        />
         <title>WorldChat</title>
         <style>
             html,
@@ -16,77 +12,13 @@
                 height: 100%;
                 margin: 0;
             }
-            .hidden {
-                display: none;
-            }
         </style>
         <script type="module">
-            import init, { start, message } from "./pkg/worldchat.js";
+            import init, { start } from "./pkg/worldchat.js";
             import("./restart-audio-context.js");
-
-            document.addEventListener("DOMContentLoaded", () => {
-                document
-                    .getElementById("joinButton")
-                    .addEventListener("click", (e) => {
-                        e.preventDefault();
-                        const username =
-                            document.getElementById("username").value;
-                        if (username) {
-                            document.getElementById("loginContainer").remove();
-                            start(username);
-
-                            document
-                                .getElementById("messageButton")
-                                .addEventListener("click", (e) => {
-                                    e.preventDefault();
-                                    const messageText =
-                                        document.getElementById(
-                                            "message",
-                                        ).value;
-                                    message(messageText);
-                                });
-                            document
-                                .getElementById("messageContainer")
-                                .classList.remove("hidden");
-                        }
-                    });
-            });
-
             await init();
+            start();
         </script>
     </head>
-    <body>
-        <main id="loginContainer" class="container">
-            <section>
-                <form>
-                    <fieldset role="group">
-                        <input
-                            type="text"
-                            name="username"
-                            id="username"
-                            placeholder="User name"
-                            aria-label="User name"
-                            required
-                        />
-                        <button id="joinButton" type="submit">Join</button>
-                    </fieldset>
-                </form>
-            </section>
-        </main>
-        <section id="messageContainer" class="hidden">
-            <form>
-                <fieldset role="group">
-                    <input
-                        type="text"
-                        name="message"
-                        id="message"
-                        placeholder="Message"
-                        aria-label="Message"
-                        required
-                    />
-                    <button id="messageButton" type="submit">Post</button>
-                </fieldset>
-            </form>
-        </section>
-    </body>
+    <body></body>
 </html>

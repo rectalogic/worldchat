@@ -1,16 +1,14 @@
 use bevy::prelude::*;
 
+mod chat;
 mod form;
 mod login;
-mod user;
-
-pub use user::{UserInfo, UserPosition};
 
 pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((form::FormPlugin, login::LoginPlugin, user::UserPlugin))
+        app.add_plugins((form::FormPlugin, login::LoginPlugin, chat::ChatPlugin))
             .add_systems(Startup, setup);
     }
 }

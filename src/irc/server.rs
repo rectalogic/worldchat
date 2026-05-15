@@ -116,7 +116,7 @@ impl IrcServer {
         let mut ws_tx = WsSender(ws_tx);
 
         let mut server_nick = user_name.clone();
-        server_nick.retain(|c| !c.is_alphanumeric());
+        server_nick.retain(char::is_alphanumeric);
 
         // Send a CAP END to signify that we're IRCv3-compliant (and to end negotiations!).
         ws_tx

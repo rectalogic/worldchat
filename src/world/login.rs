@@ -20,8 +20,13 @@ fn scene() -> impl Scene {
             justify_content: JustifyContent::Center,
         }
         Children [
-            form::ui("Join")
-            on(submit_join)
+            Node {
+                width: percent(90),
+            }
+            Children [
+                form::ui("Join")
+                on(submit_join)
+            ]
         ]
     }
 }
