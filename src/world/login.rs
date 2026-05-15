@@ -6,13 +6,14 @@ pub struct LoginPlugin;
 
 impl Plugin for LoginPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, scene.spawn())
-            .add_systems(OnExit(AppState::Login), teardown);
+        app.add_systems(Startup, scene.spawn());
     }
 }
 
 fn scene() -> impl Scene {
     bsn! {
+        #Login
+        DespawnOnExit<AppState>(AppState::Login)
         Node {
             width: percent(100),
             height: percent(100),
@@ -40,11 +41,3 @@ fn submit_join(
     commands.trigger(PrimaryUserNameSet(event.value.clone()));
     next_state.set(AppState::Chat);
 }
-
-fn teardown(mut commands: Commands, nodes: Query<Entity, With<Node>>) {
-    for node in nodes {
-        commands.entity(node).despawn();
-    }
-}
-
-//XXX trigger PrimaryUserNameSet and transition state when login entered

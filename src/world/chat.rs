@@ -14,6 +14,7 @@ pub struct ChatPlugin;
 impl Plugin for ChatPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(on_primary_user_added)
+            .add_observer(on_user_added)
             .add_observer(on_user_joined)
             .add_observer(on_message)
             .add_systems(OnEnter(AppState::Chat), scene.spawn());
@@ -58,6 +59,8 @@ impl TryFrom<&str> for UserInfo {
 
 fn scene() -> impl Scene {
     bsn! {
+        #ChatMessage
+        DespawnOnExit<AppState>(AppState::Chat)
         Node {
             width: percent(100),
             height: percent(100),
@@ -109,6 +112,13 @@ fn on_primary_user_added(
             .entity(added.entity)
             .insert(Text2d::new(name.as_str()));
     }
+}
+
+#[expect(clippy::needless_pass_by_value)]
+fn on_user_added(added: On<Add, User>, mut commands: Commands) {
+    commands
+        .entity(added.entity)
+        .insert(DespawnOnExit(AppState::Chat));
 }
 
 #[expect(clippy::needless_pass_by_value)]
