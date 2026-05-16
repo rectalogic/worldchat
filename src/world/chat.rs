@@ -3,9 +3,8 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    User, UserMessage,
     app::AppState,
-    irc::{IrcControlMessage, IrcServer, PrimaryUser, UserJoined},
+    irc::{IrcControlMessage, IrcServer, PrimaryUser, User, UserJoined, UserMessage},
     world::form,
 };
 
@@ -18,6 +17,7 @@ impl Plugin for ChatPlugin {
             .add_observer(on_user_joined)
             .add_observer(on_message)
             .add_systems(OnEnter(AppState::Chat), scene.spawn());
+        //XXX remove IrcServer resource OnExit? figure out Error state
     }
 }
 

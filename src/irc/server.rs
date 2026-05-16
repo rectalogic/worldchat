@@ -79,6 +79,9 @@ enum StreamMessage {
 pub struct IrcServer {
     tx: async_channel::Sender<IrcControlMessage>,
     rx: async_channel::Receiver<IrcEvent>,
+    #[cfg(not(target_arch = "wasm32"))]
+    _task: tokio::runtime::Runtime,
+    #[cfg(target_arch = "wasm32")]
     _task: Task<()>,
     // Map nick to entity
     users: HashMap<String, Entity>,
@@ -88,15 +91,28 @@ impl IrcServer {
     pub fn new(user_name: String) -> Self {
         let (bevy_tx, bevy_rx) = async_channel::unbounded();
         let (irc_tx, irc_rx) = async_channel::unbounded();
+
+        let future = async move {
+            if let Err(e) = Self::serve(user_name, bevy_rx, irc_tx).await {
+                error!("Failed to connect to IRC server: {e:?}");
+                //XXX handle ws errors, just alert user?
+            }
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let rt = {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.spawn(future);
+            rt
+        };
+
         Self {
             tx: bevy_tx,
             rx: irc_rx,
-            _task: IoTaskPool::get().spawn(async move {
-                if let Err(e) = Self::serve(user_name, bevy_rx, irc_tx).await {
-                    error!("Failed to connect to IRC server: {e:?}");
-                    //XXX handle ws errors, just alert user?
-                }
-            }),
+            #[cfg(not(target_arch = "wasm32"))]
+            _task: rt,
+            #[cfg(target_arch = "wasm32")]
+            _task: IoTaskPool::get().spawn(future),
             users: HashMap::default(),
         }
     }
