@@ -12,13 +12,33 @@
                 height: 100%;
                 margin: 0;
             }
+            canvas {
+                display: block;
+            }
         </style>
         <script type="module">
+            const canvasEl = document.getElementById("canvas");
+            let once = false;
+            const observer_callback = (_mutations, _observer) => {
+                if (!once) {
+                    // Lock the canvas aspect ratio to prevent the fit_canvas_to_parent setting from creating a feedback loop causing the canvas to grow on resize
+                    canvasEl.style.aspectRatio =
+                        canvasEl.attributes.width.value /
+                        canvasEl.attributes.height.value;
+                    once = true;
+                }
+            };
+            const observer = new MutationObserver(observer_callback);
+            const config = { attributeFilter: ["width", "height"] };
+            observer.observe(canvasEl, config);
+
             import init, { start } from "./pkg/worldchat.js";
             import("./restart-audio-context.js");
             await init();
             start();
         </script>
     </head>
-    <body></body>
+    <body>
+        <canvas id="canvas"></canvas>
+    </body>
 </html>
