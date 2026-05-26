@@ -2,13 +2,17 @@ use bevy::{
     input_focus::{AutoFocus, InputFocus},
     prelude::*,
     text::{EditableText, TextCursorStyle},
+    ui::Pressed,
+    ui_widgets::{Activate, Button},
 };
 
 pub struct FormPlugin;
 
 impl Plugin for FormPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, text_submission);
+        app.add_observer(button_highlight)
+            .add_observer(button_unhighlight)
+            .add_systems(Update, text_submission);
     }
 }
 
@@ -41,7 +45,7 @@ pub fn ui(label: &str) -> impl Scene {
             (
                 button(label)
                 ButtonFor(#TextInput)
-                on(|event: On<Pointer<Click>>, mut commands: Commands, buttons: Query<&ButtonFor>, mut texts: Query<&mut EditableText>| {
+                on(|event: On<Activate>, mut commands: Commands, buttons: Query<&ButtonFor>, mut texts: Query<&mut EditableText>| {
                     if let Ok(button_for ) = buttons.get(event.entity) && let Ok(mut text) = texts.get_mut(button_for.0) {
                         let value = text.value().to_string();
                         if !value.is_empty() {
@@ -58,8 +62,10 @@ pub fn ui(label: &str) -> impl Scene {
     }
 }
 
+const BUTTON_COLOR: Color = Color::srgb(0.003, 0.447, 0.678);
+const BUTTON_PRESSED_COLOR: Color = Color::srgb(0.003 * 0.8, 0.447 * 0.8, 0.678 * 0.8);
+
 fn button(label: &str) -> impl Scene {
-    let background = Color::srgb(0.003, 0.447, 0.678);
     bsn! {
         Button
         Node {
@@ -71,17 +77,7 @@ fn button(label: &str) -> impl Scene {
             align_items: AlignItems::Center,
         }
         BorderColor::from(Color::BLACK)
-        BackgroundColor(background)
-        on(|event: On<Pointer<Press>>, mut query: Query<&mut BackgroundColor>| {
-            if let Ok(mut color) = query.get_mut(event.entity) {
-                color.0 = color.0.mix(&Color::BLACK, 0.2);
-            }
-        })
-        on(move |event: On<Pointer<Release>>, mut query: Query<&mut BackgroundColor>| {
-            if let Ok(mut color) = query.get_mut(event.entity) {
-                color.0 = background;
-            }
-        })
+        BackgroundColor(BUTTON_COLOR)
         Children [(
             Text(label)
             TextFont {
@@ -131,5 +127,25 @@ fn text_submission(
             });
             text_input.clear();
         }
+    }
+}
+
+#[expect(clippy::needless_pass_by_value)]
+fn button_highlight(
+    pressed: On<Add, Pressed>,
+    mut buttons: Query<&mut BackgroundColor, With<Button>>,
+) {
+    if let Ok(mut color) = buttons.get_mut(pressed.entity) {
+        color.0 = BUTTON_PRESSED_COLOR;
+    }
+}
+
+#[expect(clippy::needless_pass_by_value)]
+fn button_unhighlight(
+    removed: On<Remove, Pressed>,
+    mut buttons: Query<&mut BackgroundColor, With<Button>>,
+) {
+    if let Ok(mut color) = buttons.get_mut(removed.entity) {
+        color.0 = BUTTON_COLOR;
     }
 }
