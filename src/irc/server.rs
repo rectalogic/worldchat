@@ -6,11 +6,10 @@ use super::{
     message::IrcControlMessage,
     user::{PrimaryUser, User, UserJoined, UserMessage},
 };
-use bevy::{
-    platform::collections::HashMap,
-    prelude::*,
-    tasks::{IoTaskPool, Task},
-};
+#[cfg(target_arch = "wasm32")]
+use bevy::tasks::{IoTaskPool, Task};
+use bevy::{platform::collections::HashMap, prelude::*};
+
 use futures_util::{
     SinkExt, Stream, StreamExt,
     stream::{self, SplitSink},
@@ -67,6 +66,7 @@ enum IrcEvent {
     UserJoined { nick: String },
     Part { nick: String },
     Quit { nick: String },
+    Error { message: String },
     Message { nick: String, message: String },
 }
 
@@ -74,6 +74,9 @@ enum StreamMessage {
     IrcControl(IrcControlMessage),
     WsMessage(ws::error::Result<ws::Message>),
 }
+
+#[derive(Event)]
+pub struct IrcError(pub String);
 
 #[derive(Resource, Debug)]
 pub struct IrcServer {
@@ -93,9 +96,13 @@ impl IrcServer {
         let (irc_tx, irc_rx) = async_channel::unbounded();
 
         let future = async move {
-            if let Err(e) = Self::serve(user_name, bevy_rx, irc_tx).await {
+            if let Err(e) = Self::serve(user_name, bevy_rx, irc_tx.clone()).await {
                 error!("Failed to connect to IRC server: {e:?}");
-                //XXX handle ws errors, just alert user?
+                let _ = irc_tx
+                    .send(IrcEvent::Error {
+                        message: e.to_string(),
+                    })
+                    .await;
             }
         };
 
@@ -317,7 +324,11 @@ impl IrcServer {
     }
 }
 
-fn handle_server_events(mut commands: Commands, mut server: ResMut<IrcServer>) {
+fn handle_server_events(
+    mut commands: Commands,
+    mut server: ResMut<IrcServer>,
+    mut next_state: ResMut<NextState<AppState>>,
+) {
     while let Ok(event) = server.rx.try_recv() {
         match event {
             IrcEvent::PrimaryUser { nick, name } => {
@@ -348,6 +359,10 @@ fn handle_server_events(mut commands: Commands, mut server: ResMut<IrcServer>) {
                     commands.entity(user_entity).despawn();
                     server.users.remove(&nick);
                 }
+            }
+            IrcEvent::Error { message } => {
+                commands.trigger(IrcError(message.clone()));
+                next_state.set(AppState::Error);
             }
             IrcEvent::Message { nick, message } => {
                 if let Some(&user_entity) = server.users.get(&nick) {
