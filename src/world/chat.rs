@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -16,44 +18,98 @@ impl Plugin for ChatPlugin {
             .add_observer(on_user_added)
             .add_observer(on_user_joined)
             .add_observer(on_message)
-            .add_systems(OnEnter(AppState::Chat), scene.spawn());
-        //XXX remove IrcServer resource OnExit? figure out Error state
+            .add_systems(OnEnter(AppState::Chat), scene.spawn())
+            .add_systems(
+                Update,
+                handle_user_movement.run_if(in_state(AppState::Chat)),
+            );
+    }
+}
+
+const GRID_CELL: i32 = 32;
+
+#[derive(Component, Serialize, Deserialize, Copy, Clone, Debug)]
+struct GridPosition(IVec2);
+
+impl GridPosition {
+    fn as_translation(&self) -> Vec3 {
+        #[expect(clippy::cast_precision_loss)]
+        Vec3::new(
+            (self.0.x * GRID_CELL) as f32,
+            (self.0.y * GRID_CELL) as f32,
+            0.0,
+        )
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct UserPosition {
-    x: f32,
-    y: f32,
+enum UserMessageData {
+    Broadcast {
+        name: String,
+        position: GridPosition,
+    },
+    Position(GridPosition),
+    Message,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct UserInfo {
-    name: Option<String>,
-    position: UserPosition,
-}
-
-impl UserInfo {
+impl UserMessageData {
     fn base64(&self) -> Result<String> {
         Ok(STANDARD_NO_PAD.encode(postcard::to_allocvec(self)?))
     }
 }
 
-impl From<&Transform> for UserPosition {
+impl From<&Transform> for GridPosition {
     fn from(transform: &Transform) -> Self {
-        UserPosition {
-            x: transform.translation.x,
-            y: transform.translation.y,
-        }
+        GridPosition(IVec2::new(
+            (transform.translation.x / GRID_CELL as f32) as i32,
+            (transform.translation.y / GRID_CELL as f32) as i32,
+        ))
     }
 }
 
-impl TryFrom<&str> for UserInfo {
+impl From<GridPosition> for Transform {
+    fn from(position: GridPosition) -> Self {
+        Transform::from_xyz(
+            (position.0.x * GRID_CELL) as f32,
+            (position.0.y * GRID_CELL) as f32,
+            0.0,
+        )
+    }
+}
+
+impl TryFrom<&str> for UserMessageData {
     type Error = BevyError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let bytes = STANDARD_NO_PAD.decode(value)?;
-        Ok(postcard::from_bytes::<UserInfo>(&bytes)?)
+        Ok(postcard::from_bytes::<UserMessageData>(&bytes)?)
+    }
+}
+
+#[derive(Component, Default, Debug)]
+struct UserMoveQueue(VecDeque<GridPosition>);
+
+impl UserMoveQueue {
+    fn new(position: GridPosition) -> Self {
+        let mut q = Self::default();
+        q.push_back(position);
+        q
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn push_back(&mut self, position: GridPosition) {
+        self.0.push_back(position);
+    }
+
+    fn front(&self) -> Option<&GridPosition> {
+        self.0.front()
+    }
+
+    fn pop_front(&mut self) -> Option<GridPosition> {
+        self.0.pop_front()
     }
 }
 
@@ -80,21 +136,12 @@ fn scene() -> impl Scene {
 }
 
 #[expect(clippy::needless_pass_by_value)]
-fn submit_message(
-    event: On<form::SubmitTextEvent>,
-    server: Res<IrcServer>,
-    primary_user: Single<(&Name, &Transform), With<PrimaryUser>>,
-) -> Result<()> {
-    let (name, transform) = *primary_user;
+fn submit_message(text_event: On<form::SubmitTextEvent>, server: Res<IrcServer>) -> Result<()> {
     server.send(IrcControlMessage::Message {
         message: format!(
             "{} {}",
-            UserInfo {
-                name: Some(name.to_string()),
-                position: UserPosition::from(transform),
-            }
-            .base64()?,
-            event.value.clone()
+            UserMessageData::Message.base64()?,
+            text_event.value.clone()
         ),
     })?;
     Ok(())
@@ -107,10 +154,10 @@ fn on_primary_user_added(
     users: Query<&Name, With<User>>,
 ) {
     if let Ok(name) = users.get(added.entity) {
-        //XXX modify initial transform so user not always at 0,0
+        //XXX modify initial transform/GridPosition so user not always at 0,0
         commands
             .entity(added.entity)
-            .insert(Text2d::new(name.as_str()));
+            .insert((Text2d::new(name.as_str()), GridPosition(IVec2::default())));
     }
 }
 
@@ -124,15 +171,15 @@ fn on_user_added(added: On<Add, User>, mut commands: Commands) {
 #[expect(clippy::needless_pass_by_value)]
 fn on_user_joined(
     _joined: On<UserJoined>,
-    primary_user: Single<(&Name, &Transform), With<PrimaryUser>>,
+    primary_user: Single<(&Name, &GridPosition), With<PrimaryUser>>,
     server: Res<IrcServer>,
 ) -> Result<()> {
-    let (name, transform) = *primary_user;
+    let (name, &grid_position) = *primary_user;
     // Broadcast our position and name in channel when any other user joins
     server.send(IrcControlMessage::Message {
-        message: UserInfo {
-            name: Some(name.to_string()),
-            position: UserPosition::from(transform),
+        message: UserMessageData::Broadcast {
+            name: name.to_string(),
+            position: grid_position,
         }
         .base64()?,
     })?;
@@ -143,7 +190,7 @@ type UsersQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static mut Transform,
+        Option<&'static mut UserMoveQueue>,
         Option<&'static Name>,
         Option<&'static PrimaryUser>,
     ),
@@ -156,30 +203,71 @@ fn on_message(
     mut commands: Commands,
     mut users: UsersQuery,
 ) -> Result<()> {
-    let (info, message) = match user_message.message.split_once(' ') {
-        None => (UserInfo::try_from(user_message.message.as_str())?, None),
-        Some((info, message)) => (UserInfo::try_from(info)?, Some(message)),
+    let (message_data, message) = match user_message.message.split_once(' ') {
+        None => (
+            UserMessageData::try_from(user_message.message.as_str())?,
+            None,
+        ),
+        Some((message_data, message)) => (UserMessageData::try_from(message_data)?, Some(message)),
     };
 
-    // Don't modify primary user
-    if let Ok((mut transform, name, primary)) = users.get_mut(user_message.user_entity)
-        && primary.is_none()
-    {
-        //XXX should animate lerp to new position (and queue up position changes)
-        transform.translation.x = info.position.x;
-        transform.translation.y = info.position.y;
-        if let Some(new_name) = info.name
-            && name.is_none()
-        {
-            commands
-                .entity(user_message.user_entity)
-                .insert((Name::new(new_name.clone()), Text2d::new(new_name)));
+    let Ok((move_queue, user_name, primary_user)) = users.get_mut(user_message.user_entity) else {
+        return Ok(());
+    };
+
+    match message_data {
+        UserMessageData::Broadcast { name, position } => {
+            if user_name.is_none() {
+                // Warp to position - new user
+                commands.entity(user_message.user_entity).insert((
+                    Name::new(name.clone()),
+                    Text2d::new(name),
+                    Transform::from(position),
+                    position,
+                ));
+            }
         }
+        UserMessageData::Position(position) => {
+            if primary_user.is_none() {
+                if let Some(mut move_queue) = move_queue {
+                    move_queue.push_back(position);
+                } else {
+                    commands
+                        .entity(user_message.user_entity)
+                        .insert(UserMoveQueue::new(position));
+                }
+            }
+        }
+        UserMessageData::Message => {}
     }
 
     if let Some(message) = message {
         // XXX add visual message component displaying last message
     }
-
     Ok(())
+}
+
+#[expect(clippy::needless_pass_by_value)]
+fn handle_user_movement(
+    mut commands: Commands,
+    moving_users: Query<(Entity, &mut UserMoveQueue, &mut Transform, &GridPosition)>,
+    time: Res<Time>,
+) {
+    // GridPosition is starting pos, queue front has target pos, transform is where we are
+    // animate and when we reach target, pop queue, and remove if empty
+    for (entity, mut move_queue, mut transform, start_position) in moving_users {
+        let Some(target_position) = move_queue.front() else {
+            commands.entity(entity).remove::<UserMoveQueue>();
+            continue;
+        };
+        let target_translation = target_position.as_translation();
+        let mut translation = start_position.as_translation();
+        translation.smooth_nudge(&target_translation, 3.0, time.delta_secs());
+        if (target_translation - translation).length() <= f32::EPSILON {
+            transform.translation = target_translation;
+            move_queue.pop_front();
+        } else {
+            transform.translation = translation;
+        }
+    }
 }
