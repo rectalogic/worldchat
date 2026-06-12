@@ -36,7 +36,7 @@ pub fn ui(label: &str) -> impl Scene {
         }
         Children [
             (
-                :text_input
+                text_input()
                 #TextInput
                 Node {
                     flex_grow: 1.0,

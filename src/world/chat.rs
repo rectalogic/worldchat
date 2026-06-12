@@ -19,24 +19,21 @@ impl Plugin for ChatPlugin {
             .add_observer(on_user_joined)
             .add_observer(on_message)
             .add_systems(OnEnter(AppState::Chat), scene.spawn())
-            .add_systems(
-                Update,
-                handle_user_movement.run_if(in_state(AppState::Chat)),
-            );
+            .add_systems(Update, update_moving_users.run_if(in_state(AppState::Chat)));
     }
 }
 
-const GRID_CELL: i32 = 32;
+const GRID_CELL: f32 = 32.0;
 
-#[derive(Component, Serialize, Deserialize, Copy, Clone, Debug)]
-struct GridPosition(IVec2);
+#[derive(Component, Serialize, Deserialize, Copy, Clone, Debug, PartialEq)]
+pub struct GridPosition(pub IVec2);
 
 impl GridPosition {
-    fn as_translation(&self) -> Vec3 {
+    fn as_translation(self) -> Vec3 {
         #[expect(clippy::cast_precision_loss)]
         Vec3::new(
-            (self.0.x * GRID_CELL) as f32,
-            (self.0.y * GRID_CELL) as f32,
+            (self.0.x * GRID_CELL as i32) as f32,
+            (self.0.y * GRID_CELL as i32) as f32,
             0.0,
         )
     }
@@ -61,19 +58,24 @@ impl UserMessageData {
 impl From<&Transform> for GridPosition {
     fn from(transform: &Transform) -> Self {
         GridPosition(IVec2::new(
-            (transform.translation.x / GRID_CELL as f32) as i32,
-            (transform.translation.y / GRID_CELL as f32) as i32,
+            (transform.translation.x / GRID_CELL) as i32,
+            (transform.translation.y / GRID_CELL) as i32,
+        ))
+    }
+}
+
+impl From<Vec2> for GridPosition {
+    fn from(position: Vec2) -> Self {
+        GridPosition(IVec2::new(
+            (position.x / GRID_CELL) as i32,
+            (position.y / GRID_CELL) as i32,
         ))
     }
 }
 
 impl From<GridPosition> for Transform {
     fn from(position: GridPosition) -> Self {
-        Transform::from_xyz(
-            (position.0.x * GRID_CELL) as f32,
-            (position.0.y * GRID_CELL) as f32,
-            0.0,
-        )
+        Transform::from_translation(position.as_translation())
     }
 }
 
@@ -86,30 +88,14 @@ impl TryFrom<&str> for UserMessageData {
     }
 }
 
-#[derive(Component, Default, Debug)]
-struct UserMoveQueue(VecDeque<GridPosition>);
+#[derive(Component, Default, Debug, Deref, DerefMut)]
+pub struct UserMoveQueue(VecDeque<GridPosition>);
 
 impl UserMoveQueue {
-    fn new(position: GridPosition) -> Self {
+    pub fn new(position: GridPosition) -> Self {
         let mut q = Self::default();
         q.push_back(position);
         q
-    }
-
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    fn push_back(&mut self, position: GridPosition) {
-        self.0.push_back(position);
-    }
-
-    fn front(&self) -> Option<&GridPosition> {
-        self.0.front()
-    }
-
-    fn pop_front(&mut self) -> Option<GridPosition> {
-        self.0.pop_front()
     }
 }
 
@@ -248,7 +234,7 @@ fn on_message(
 }
 
 #[expect(clippy::needless_pass_by_value)]
-fn handle_user_movement(
+fn update_moving_users(
     mut commands: Commands,
     moving_users: Query<(Entity, &mut UserMoveQueue, &mut Transform, &GridPosition)>,
     time: Res<Time>,
