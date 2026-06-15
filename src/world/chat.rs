@@ -236,20 +236,20 @@ fn on_message(
 #[expect(clippy::needless_pass_by_value)]
 fn update_moving_users(
     mut commands: Commands,
-    moving_users: Query<(Entity, &mut UserMoveQueue, &mut Transform, &GridPosition)>,
+    moving_users: Query<(Entity, &mut UserMoveQueue, &mut Transform)>,
     time: Res<Time>,
 ) {
-    // GridPosition is starting pos, queue front has target pos, transform is where we are
+    // Queue front has target pos, transform is where we are
     // animate and when we reach target, pop queue, and remove if empty
-    for (entity, mut move_queue, mut transform, start_position) in moving_users {
+    for (entity, mut move_queue, mut transform) in moving_users {
         let Some(target_position) = move_queue.front() else {
             commands.entity(entity).remove::<UserMoveQueue>();
             continue;
         };
         let target_translation = target_position.as_translation();
-        let mut translation = start_position.as_translation();
-        translation.smooth_nudge(&target_translation, 3.0, time.delta_secs());
-        if (target_translation - translation).length() <= f32::EPSILON {
+        let mut translation = transform.translation;
+        translation.smooth_nudge(&target_translation, f32::ln(10.0), time.delta_secs());
+        if (target_translation - translation).length() < 1.0 {
             transform.translation = target_translation;
             move_queue.pop_front();
         } else {

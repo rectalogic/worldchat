@@ -28,7 +28,15 @@ const DIRECTIONS: [(Dir2, IVec2); 8] = [
 #[expect(clippy::needless_pass_by_value)]
 fn move_primary_user(
     mut commands: Commands,
-    user: Single<(Entity, &Transform, Option<&mut UserMoveQueue>), With<PrimaryUser>>,
+    user: Single<
+        (
+            Entity,
+            &Transform,
+            &GridPosition,
+            Option<&mut UserMoveQueue>,
+        ),
+        With<PrimaryUser>,
+    >,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     touches: Res<Touches>,
     window: Single<&Window, With<PrimaryWindow>>,
@@ -46,7 +54,7 @@ fn move_primary_user(
     if let Some(position) = position {
         let (camera, camera_transform) = *camera;
         if let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, position) {
-            let (user_entity, transform, mut move_queue) = user.into_inner();
+            let (user_entity, transform, current_position, move_queue) = user.into_inner();
             let delta = world_pos - transform.translation.truncate();
             let Ok(dir) = Dir2::new(delta) else {
                 return;
@@ -55,7 +63,7 @@ fn move_primary_user(
                 .into_iter()
                 .max_by(|(a, _), (b, _)| dir.dot(**a).partial_cmp(&dir.dot(**b)).unwrap())
             {
-                let new_position = GridPosition(pos);
+                let new_position = GridPosition(pos + current_position.0);
                 if let Some(mut move_queue) = move_queue {
                     if Some(&new_position) == move_queue.back() {
                         return;
