@@ -151,7 +151,8 @@ fn on_primary_user_added(
 fn on_user_added(added: On<Add, User>, mut commands: Commands) {
     commands
         .entity(added.entity)
-        .insert(DespawnOnExit(AppState::Chat));
+        .insert(DespawnOnExit(AppState::Chat))
+        .with_child(TextSpan::default());
 }
 
 #[expect(clippy::needless_pass_by_value)]
@@ -178,7 +179,7 @@ type UsersQuery<'w, 's> = Query<
     (
         Option<&'static mut UserMoveQueue>,
         Option<&'static Name>,
-        Option<&'static PrimaryUser>,
+        Has<PrimaryUser>,
     ),
     With<User>,
 >;
@@ -188,6 +189,7 @@ fn on_message(
     user_message: On<UserMessage>,
     mut commands: Commands,
     mut users: UsersQuery,
+    mut writer: Text2dWriter,
 ) -> Result<()> {
     let (message_data, message) = match user_message.message.split_once(' ') {
         None => (
@@ -197,7 +199,8 @@ fn on_message(
         Some((message_data, message)) => (UserMessageData::try_from(message_data)?, Some(message)),
     };
 
-    let Ok((move_queue, user_name, primary_user)) = users.get_mut(user_message.user_entity) else {
+    let Ok((move_queue, user_name, is_primary_user)) = users.get_mut(user_message.user_entity)
+    else {
         return Ok(());
     };
 
@@ -214,7 +217,7 @@ fn on_message(
             }
         }
         UserMessageData::Position(position) => {
-            if primary_user.is_none() {
+            if is_primary_user {
                 if let Some(mut move_queue) = move_queue {
                     move_queue.push_back(position);
                 } else {
@@ -228,7 +231,7 @@ fn on_message(
     }
 
     if let Some(message) = message {
-        // XXX add visual message component displaying last message
+        *writer.text(user_message.user_entity, 1) = message.into();
     }
     Ok(())
 }

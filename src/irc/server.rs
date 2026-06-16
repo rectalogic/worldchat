@@ -160,7 +160,7 @@ impl IrcServer {
             if let Ok(ws::Message::Text(bytes)) = response
                 && let Ok(message) = IrcMessage::from_str(bytes.to_string().as_str())
             {
-                info!("{message:?}"); //XXX
+                info!("response {message:?}"); //XXX
                 match message.command {
                     Command::PING(server1, server2) => {
                         ws_tx.send(&Command::PONG(server1, server2)).await?;
@@ -213,7 +213,7 @@ impl IrcServer {
                     if let Ok(message) =
                         irc_proto::message::Message::from_str(bytes.to_string().as_str())
                     {
-                        info!("{message:?}"); //XXX
+                        info!("response {message:?}"); //XXX
                         match message {
                             IrcMessage {
                                 command: Command::PING(server1, server2),
@@ -304,7 +304,7 @@ impl IrcServer {
                 StreamMessage::WsMessage(Ok(ws::Message::Binary(_))) => {}
                 StreamMessage::WsMessage(Ok(ws::Message::Close(_))) => return Ok(()),
                 StreamMessage::IrcControl(control) => {
-                    info!("{control:?}"); //XXX
+                    info!("control {control:?}"); //XXX
                     match control {
                         IrcControlMessage::Part => {
                             ws_tx
