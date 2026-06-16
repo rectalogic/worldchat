@@ -40,7 +40,7 @@ impl GridPosition {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-enum UserMessageData {
+pub enum UserMessageData {
     Broadcast {
         name: String,
         position: GridPosition,
@@ -50,7 +50,7 @@ enum UserMessageData {
 }
 
 impl UserMessageData {
-    fn base64(&self) -> Result<String> {
+    pub fn base64(&self) -> Result<String> {
         Ok(STANDARD_NO_PAD.encode(postcard::to_allocvec(self)?))
     }
 }
@@ -241,14 +241,12 @@ fn update_moving_users(
         &mut UserMoveQueue,
         &mut Transform,
         &mut GridPosition,
-        Option<&PrimaryUser>,
     )>,
     time: Res<Time>,
-    server: Res<IrcServer>,
-) -> Result<()> {
+) {
     // Queue front has target pos, transform is where we are
     // animate and when we reach target, pop queue, and remove if empty
-    for (entity, mut move_queue, mut transform, mut grid_position, primary_user) in moving_users {
+    for (entity, mut move_queue, mut transform, mut grid_position) in moving_users {
         let Some(target_position) = move_queue.front() else {
             commands.entity(entity).remove::<UserMoveQueue>();
             continue;
@@ -260,15 +258,9 @@ fn update_moving_users(
             transform.translation = target_translation;
             if let Some(pos) = move_queue.pop_front() {
                 *grid_position = pos;
-                if primary_user.is_some() {
-                    server.send(IrcControlMessage::Message {
-                        message: UserMessageData::Position(pos).base64()?,
-                    })?;
-                }
             }
         } else {
             transform.translation = translation;
         }
     }
-    Ok(())
 }

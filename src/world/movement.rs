@@ -2,8 +2,8 @@ use bevy::{prelude::*, window::PrimaryWindow};
 
 use crate::{
     app::AppState,
-    irc::PrimaryUser,
-    world::chat::{GridPosition, UserMoveQueue},
+    irc::{IrcControlMessage, IrcServer, PrimaryUser},
+    world::chat::{GridPosition, UserMessageData, UserMoveQueue},
 };
 
 pub struct MovePlugin;
@@ -41,7 +41,8 @@ fn move_primary_user(
     touches: Res<Touches>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform)>,
-) {
+    server: Res<IrcServer>,
+) -> Result<()> {
     let mut position = None;
 
     if mouse_buttons.pressed(MouseButton::Left) {
@@ -57,7 +58,7 @@ fn move_primary_user(
             let (user_entity, transform, current_position, move_queue) = user.into_inner();
             let delta = world_pos - transform.translation.truncate();
             let Ok(dir) = Dir2::new(delta) else {
-                return;
+                return Ok(());
             };
             if let Some((_, pos)) = DIRECTIONS
                 .into_iter()
@@ -66,15 +67,22 @@ fn move_primary_user(
                 let new_position = GridPosition(pos + current_position.0);
                 if let Some(mut move_queue) = move_queue {
                     if Some(&new_position) == move_queue.back() {
-                        return;
+                        return Ok(());
                     }
                     move_queue.push_back(new_position);
+                    server.send(IrcControlMessage::Message {
+                        message: UserMessageData::Position(new_position).base64()?,
+                    })?;
                 } else {
                     commands
                         .entity(user_entity)
                         .insert(UserMoveQueue::new(new_position));
+                    server.send(IrcControlMessage::Message {
+                        message: UserMessageData::Position(new_position).base64()?,
+                    })?;
                 }
             }
         }
     }
+    Ok(())
 }
