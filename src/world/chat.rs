@@ -122,7 +122,12 @@ fn scene() -> impl Scene {
 }
 
 #[expect(clippy::needless_pass_by_value)]
-fn submit_message(text_event: On<form::SubmitTextEvent>, server: Res<IrcServer>) -> Result<()> {
+fn submit_message(
+    text_event: On<form::SubmitTextEvent>,
+    primary_user: Single<Entity, With<PrimaryUser>>,
+    server: Res<IrcServer>,
+    mut writer: Text2dWriter,
+) -> Result<()> {
     server.send(IrcControlMessage::Message {
         message: format!(
             "{} {}",
@@ -130,6 +135,7 @@ fn submit_message(text_event: On<form::SubmitTextEvent>, server: Res<IrcServer>)
             text_event.value.clone()
         ),
     })?;
+    *writer.text(*primary_user, 1) = text_event.value.clone();
     Ok(())
 }
 
@@ -230,7 +236,9 @@ fn on_message(
         UserMessageData::Message => {}
     }
 
-    if let Some(message) = message {
+    if let Some(message) = message
+        && !is_primary_user
+    {
         *writer.text(user_message.user_entity, 1) = message.into();
     }
     Ok(())
