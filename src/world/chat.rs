@@ -236,12 +236,19 @@ fn on_message(
 #[expect(clippy::needless_pass_by_value)]
 fn update_moving_users(
     mut commands: Commands,
-    moving_users: Query<(Entity, &mut UserMoveQueue, &mut Transform)>,
+    moving_users: Query<(
+        Entity,
+        &mut UserMoveQueue,
+        &mut Transform,
+        &mut GridPosition,
+        Option<&PrimaryUser>,
+    )>,
     time: Res<Time>,
-) {
+    server: Res<IrcServer>,
+) -> Result<()> {
     // Queue front has target pos, transform is where we are
     // animate and when we reach target, pop queue, and remove if empty
-    for (entity, mut move_queue, mut transform) in moving_users {
+    for (entity, mut move_queue, mut transform, mut grid_position, primary_user) in moving_users {
         let Some(target_position) = move_queue.front() else {
             commands.entity(entity).remove::<UserMoveQueue>();
             continue;
@@ -251,9 +258,17 @@ fn update_moving_users(
         translation.smooth_nudge(&target_translation, f32::ln(10.0), time.delta_secs());
         if (target_translation - translation).length() < 1.0 {
             transform.translation = target_translation;
-            move_queue.pop_front();
+            if let Some(pos) = move_queue.pop_front() {
+                *grid_position = pos;
+                if primary_user.is_some() {
+                    server.send(IrcControlMessage::Message {
+                        message: UserMessageData::Position(pos).base64()?,
+                    })?;
+                }
+            }
         } else {
             transform.translation = translation;
         }
     }
+    Ok(())
 }
