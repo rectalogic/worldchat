@@ -135,7 +135,7 @@ fn submit_message(
             text_event.value.clone()
         ),
     })?;
-    *writer.text(*primary_user, 1) = text_event.value.clone();
+    display_message(*primary_user, text_event.value.as_str(), &mut writer);
     Ok(())
 }
 
@@ -147,9 +147,12 @@ fn on_primary_user_added(
 ) {
     if let Ok(name) = users.get(added.entity) {
         //XXX modify initial transform/GridPosition so user not always at 0,0
-        commands
-            .entity(added.entity)
-            .insert((Text2d::new(name.as_str()), GridPosition(IVec2::default())));
+        let position = GridPosition(IVec2::default());
+        commands.entity(added.entity).insert((
+            configure_user_name(name.as_str()),
+            Transform::from(position),
+            position,
+        ));
     }
 }
 
@@ -215,8 +218,7 @@ fn on_message(
             if user_name.is_none() {
                 // Warp to position - new user
                 commands.entity(user_message.user_entity).insert((
-                    Name::new(name.clone()),
-                    Text2d::new(name),
+                    configure_user_name(name),
                     Transform::from(position),
                     position,
                 ));
@@ -239,7 +241,7 @@ fn on_message(
     if let Some(message) = message
         && !is_primary_user
     {
-        *writer.text(user_message.user_entity, 1) = message.into();
+        display_message(user_message.user_entity, message, &mut writer);
     }
     Ok(())
 }
@@ -274,4 +276,13 @@ fn update_moving_users(
             transform.translation = translation;
         }
     }
+}
+
+fn configure_user_name(name: impl Into<String>) -> impl Bundle {
+    let name = name.into();
+    (Name::new(name.clone()), Text2d::new(name))
+}
+
+fn display_message(user_entity: Entity, message: &str, writer: &mut Text2dWriter) {
+    message.clone_into(&mut *writer.text(user_entity, 1));
 }
