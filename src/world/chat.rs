@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     app::AppState,
     irc::{IrcControlMessage, IrcServer, PrimaryUser, User, UserJoined, UserMessage},
-    world::form,
+    world::{
+        form,
+        message::{SyncUiFollower, SyncUiLeader, configure_user_ui},
+    },
 };
 
 pub struct ChatPlugin;
@@ -124,9 +127,9 @@ fn scene() -> impl Scene {
 #[expect(clippy::needless_pass_by_value)]
 fn submit_message(
     text_event: On<form::SubmitTextEvent>,
-    primary_user: Single<Entity, With<PrimaryUser>>,
+    primary_user: Single<&SyncUiLeader, With<PrimaryUser>>,
     server: Res<IrcServer>,
-    mut writer: Text2dWriter,
+    mut writer: TextUiWriter,
 ) -> Result<()> {
     server.send(IrcControlMessage::Message {
         message: format!(
@@ -135,7 +138,9 @@ fn submit_message(
             text_event.value.clone()
         ),
     })?;
-    display_message(*primary_user, text_event.value.as_str(), &mut writer);
+    if let Some(message_ui) = primary_user.iter().next() {
+        display_message(message_ui, text_event.value.as_str(), &mut writer);
+    }
     Ok(())
 }
 
@@ -148,11 +153,11 @@ fn on_primary_user_added(
     if let Ok(name) = users.get(added.entity) {
         //XXX modify initial transform/GridPosition so user not always at 0,0
         let position = GridPosition(IVec2::default());
-        commands.entity(added.entity).insert((
-            configure_user_name(name.as_str()),
-            Transform::from(position),
-            position,
-        ));
+        configure_user_ui(
+            name.as_str(),
+            (Transform::from(position), position),
+            commands.entity(added.entity),
+        );
     }
 }
 
@@ -198,7 +203,8 @@ fn on_message(
     user_message: On<UserMessage>,
     mut commands: Commands,
     mut users: UsersQuery,
-    mut writer: Text2dWriter,
+    mut writer: TextUiWriter,
+    sync: Query<&SyncUiFollower>,
 ) -> Result<()> {
     let (message_data, message) = match user_message.message.split_once(' ') {
         None => (
@@ -217,11 +223,11 @@ fn on_message(
         UserMessageData::Broadcast { name, position } => {
             if user_name.is_none() {
                 // Warp to position - new user
-                commands.entity(user_message.user_entity).insert((
-                    configure_user_name(name),
-                    Transform::from(position),
-                    position,
-                ));
+                configure_user_ui(
+                    name,
+                    (Transform::from(position), position),
+                    commands.entity(user_message.user_entity),
+                );
             }
         }
         UserMessageData::Position(position) => {
@@ -240,8 +246,9 @@ fn on_message(
 
     if let Some(message) = message
         && !is_primary_user
+        && let Some(message_ui) = sync.related::<SyncUiFollower>(user_message.user_entity)
     {
-        display_message(user_message.user_entity, message, &mut writer);
+        display_message(message_ui, message, &mut writer);
     }
     Ok(())
 }
@@ -278,11 +285,6 @@ fn update_moving_users(
     }
 }
 
-fn configure_user_name(name: impl Into<String>) -> impl Bundle {
-    let name = name.into();
-    (Name::new(name.clone()), Text2d::new(name))
-}
-
-fn display_message(user_entity: Entity, message: &str, writer: &mut Text2dWriter) {
-    message.clone_into(&mut *writer.text(user_entity, 1));
+fn display_message(user_entity: Entity, message: &str, writer: &mut TextUiWriter) {
+    message.clone_into(&mut *writer.text(user_entity, 0));
 }

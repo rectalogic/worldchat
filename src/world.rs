@@ -4,6 +4,7 @@ mod chat;
 mod error;
 mod form;
 mod login;
+mod message;
 mod movement;
 pub struct WorldPlugin;
 
@@ -15,6 +16,7 @@ impl Plugin for WorldPlugin {
             chat::ChatPlugin,
             movement::MovePlugin,
             error::ErrorPlugin,
+            message::MessagePlugin,
         ))
         .add_systems(Startup, setup);
     }
