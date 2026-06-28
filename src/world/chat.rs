@@ -9,7 +9,7 @@ use crate::{
     irc::{IrcControlMessage, IrcServer, PrimaryUser, User, UserJoined, UserMessage},
     world::{
         form,
-        message::{SyncUiFollower, SyncUiLeader, configure_user_ui},
+        message::{SyncUiFollowerOf, SyncUiLeader, configure_user_ui, display_message},
     },
 };
 
@@ -129,7 +129,7 @@ fn submit_message(
     text_event: On<form::SubmitTextEvent>,
     primary_user: Single<&SyncUiLeader, With<PrimaryUser>>,
     server: Res<IrcServer>,
-    mut writer: TextUiWriter,
+    mut commands: Commands,
 ) -> Result<()> {
     server.send(IrcControlMessage::Message {
         message: format!(
@@ -139,7 +139,7 @@ fn submit_message(
         ),
     })?;
     if let Some(message_ui) = primary_user.iter().next() {
-        display_message(message_ui, text_event.value.as_str(), &mut writer);
+        display_message(commands.entity(message_ui), text_event.value.clone());
     }
     Ok(())
 }
@@ -165,8 +165,7 @@ fn on_primary_user_added(
 fn on_user_added(added: On<Add, User>, mut commands: Commands) {
     commands
         .entity(added.entity)
-        .insert(DespawnOnExit(AppState::Chat))
-        .with_child(TextSpan::default());
+        .insert(DespawnOnExit(AppState::Chat));
 }
 
 #[expect(clippy::needless_pass_by_value)]
@@ -203,8 +202,7 @@ fn on_message(
     user_message: On<UserMessage>,
     mut commands: Commands,
     mut users: UsersQuery,
-    mut writer: TextUiWriter,
-    sync: Query<&SyncUiFollower>,
+    sync: Query<&SyncUiFollowerOf>,
 ) -> Result<()> {
     let (message_data, message) = match user_message.message.split_once(' ') {
         None => (
@@ -246,9 +244,9 @@ fn on_message(
 
     if let Some(message) = message
         && !is_primary_user
-        && let Some(message_ui) = sync.related::<SyncUiFollower>(user_message.user_entity)
+        && let Some(message_ui) = sync.related::<SyncUiFollowerOf>(user_message.user_entity)
     {
-        display_message(message_ui, message, &mut writer);
+        display_message(commands.entity(message_ui), message);
     }
     Ok(())
 }
@@ -283,8 +281,4 @@ fn update_moving_users(
             transform.translation = translation;
         }
     }
-}
-
-fn display_message(user_entity: Entity, message: &str, writer: &mut TextUiWriter) {
-    message.clone_into(&mut *writer.text(user_entity, 0));
 }

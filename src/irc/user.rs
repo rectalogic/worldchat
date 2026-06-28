@@ -5,7 +5,6 @@ use bevy::prelude::*;
 pub struct PrimaryUser;
 
 #[derive(Component, Default, Debug)]
-#[require(Transform)]
 pub struct User;
 
 #[derive(EntityEvent, Debug)]
