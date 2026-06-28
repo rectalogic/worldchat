@@ -28,7 +28,7 @@ impl Plugin for ChatPlugin {
 
 const GRID_CELL: f32 = 32.0;
 
-#[derive(Component, Serialize, Deserialize, Copy, Clone, Debug, PartialEq)]
+#[derive(Component, Serialize, Deserialize, Copy, Clone, Default, Debug, PartialEq)]
 pub struct GridPosition(pub IVec2);
 
 impl GridPosition {
@@ -153,11 +153,7 @@ fn on_primary_user_added(
     if let Ok(name) = users.get(added.entity) {
         //XXX modify initial transform/GridPosition so user not always at 0,0
         let position = GridPosition(IVec2::default());
-        configure_user_ui(
-            name.as_str(),
-            (Transform::from(position), position),
-            commands.entity(added.entity),
-        );
+        configure_user_ui(name.as_str(), position, commands.entity(added.entity));
     }
 }
 
@@ -191,7 +187,7 @@ type UsersQuery<'w, 's> = Query<
     's,
     (
         Option<&'static mut UserMoveQueue>,
-        Option<&'static Name>,
+        Has<Name>,
         Has<PrimaryUser>,
     ),
     With<User>,
@@ -212,20 +208,16 @@ fn on_message(
         Some((message_data, message)) => (UserMessageData::try_from(message_data)?, Some(message)),
     };
 
-    let Ok((move_queue, user_name, is_primary_user)) = users.get_mut(user_message.user_entity)
+    let Ok((move_queue, has_user_name, is_primary_user)) = users.get_mut(user_message.user_entity)
     else {
         return Ok(());
     };
 
     match message_data {
         UserMessageData::Broadcast { name, position } => {
-            if user_name.is_none() {
+            if !has_user_name {
                 // Warp to position - new user
-                configure_user_ui(
-                    name,
-                    (Transform::from(position), position),
-                    commands.entity(user_message.user_entity),
-                );
+                configure_user_ui(name, position, commands.entity(user_message.user_entity));
             }
         }
         UserMessageData::Position(position) => {

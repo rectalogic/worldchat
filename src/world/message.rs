@@ -1,5 +1,7 @@
 use bevy::{camera::primitives::Aabb, math::bounding::Aabb2d, prelude::*};
 
+use crate::world::chat::GridPosition;
+
 pub struct MessagePlugin;
 
 impl Plugin for MessagePlugin {
@@ -19,20 +21,25 @@ pub struct SyncUiFollowerOf(Entity);
 
 pub fn configure_user_ui(
     name: impl Into<String>,
-    bundle: impl Bundle,
+    position: GridPosition,
     mut commands: EntityCommands<'_>,
 ) {
-    let name = name.into();
     //XXX is this spawning too late, so Transform is inserted before SyncUiFollower?
-    commands
-        .queue_spawn_related_scenes::<SyncUiLeader>(message_ui())
-        .insert((bundle, Name::new(name.clone()), Text2d::new(name)));
+    commands.apply_scene(message_ui(name, position));
 }
 
-fn message_ui() -> impl SceneList {
+fn message_ui(name: impl Into<String>, position: GridPosition) -> impl Scene {
     let background = Color::BLACK.with_alpha(0.5);
-    bsn_list! [
-        (
+    let name = name.into();
+    let user_name = name.clone();
+    let position_vec = position.0;
+    bsn! {
+        Name(user_name)
+        Text2d(name)
+        // https://github.com/bevyengine/bevy/issues/24531
+        GridPosition(position_vec)
+        Transform::from(position)
+        SyncUiLeader [
             Node {
                 position_type: PositionType::Absolute,
                 padding: UiRect::px(10.0, 10.0, 8.0, 6.0),
@@ -45,8 +52,8 @@ fn message_ui() -> impl SceneList {
                 justify: Justify::Left,
                 linebreak: LineBreak::WordBoundary
             }
-        )
-    ]
+        ]
+    }
 }
 
 pub fn display_message(mut commands: EntityCommands<'_>, message: impl Into<String>) {
