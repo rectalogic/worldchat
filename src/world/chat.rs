@@ -198,7 +198,7 @@ fn on_message(
     user_message: On<UserMessage>,
     mut commands: Commands,
     mut users: UsersQuery,
-    sync: Query<&SyncUiFollowerOf>,
+    sync_leader: Query<&SyncUiLeader>,
 ) -> Result<()> {
     let (message_data, message) = match user_message.message.split_once(' ') {
         None => (
@@ -236,7 +236,9 @@ fn on_message(
 
     if let Some(message) = message
         && !is_primary_user
-        && let Some(message_ui) = sync.related::<SyncUiFollowerOf>(user_message.user_entity)
+        && let Some(message_ui) = sync_leader
+            .relationship_sources(user_message.user_entity)
+            .next()
     {
         display_message(commands.entity(message_ui), message);
     }

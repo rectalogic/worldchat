@@ -24,7 +24,6 @@ pub fn configure_user_ui(
     position: GridPosition,
     mut commands: EntityCommands<'_>,
 ) {
-    //XXX is this spawning too late, so Transform is inserted before SyncUiFollower?
     commands.apply_scene(message_ui(name, position));
 }
 
@@ -57,8 +56,6 @@ fn message_ui(name: impl Into<String>, position: GridPosition) -> impl Scene {
 }
 
 pub fn display_message(mut commands: EntityCommands<'_>, message: impl Into<String>) {
-    //XXX need to mark the 2d target Transform as mutatded so we sync_ui
-    // XXX ugh, sync_ui doesn't run because GlobalTransform changes before we add SyncUiLeader - so we never see the initial insert
     commands.insert((Text(message.into()), Visibility::Inherited));
 }
 
